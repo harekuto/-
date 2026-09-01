@@ -24,7 +24,7 @@ jobs:
           test -f musor-drop/build.gradle
           test -f musor-drop/src/main/java/net/execheinz/upgrader/Upgrader.java
 
-      - name: Apply Musor Drop 4.0.1 source fixes
+      - name: Apply Musor Drop 4.0.2 source fixes
         shell: bash
         run: |
           set -euxo pipefail
@@ -40,15 +40,38 @@ jobs:
 
           # The actual Forge identity is Musor Drop, not Upgrader. Java package names remain an internal implementation detail.
           sed -i 's/public static final String MODID = "upgrader";/public static final String MODID = "musordrop";/' "$MAIN"
-          sed -i 's/mod_id=upgrader/mod_id=musordrop/' musor-drop/gradle.properties
-          sed -i 's/mod_version=4.0.0-musordrop/mod_version=4.0.1/' musor-drop/gradle.properties
-          sed -i 's/mod_group_id=net.execheinz.upgrader/mod_group_id=net.execheinz.musordrop/' musor-drop/gradle.properties
+          sed -i 's/^mod_id=.*/mod_id=musordrop/' musor-drop/gradle.properties
+          sed -i 's/^mod_version=.*/mod_version=4.0.2/' musor-drop/gradle.properties
+          sed -i 's/^mod_group_id=.*/mod_group_id=net.execheinz.musordrop/' musor-drop/gradle.properties
           sed -i 's/EXEcheINZ (original Upgrader), Musor Drop rebuild/EXEcheINZ (original base), Musor Drop rebuild/' musor-drop/gradle.properties
 
           # Stable Musor Drop registry IDs.
           sed -i 's/ITEMS.register("upgrader",/ITEMS.register("station",/' "$ITEMS"
           sed -i 's/MENUS.register("upgrader",/MENUS.register("station",/' "$MENUS"
           sed -i 's/"menu.upgrader.title"/"menu.musordrop.title"/' "$ITEM"
+
+          # Add the station to a real vanilla creative tab so it is discoverable in Creative mode and Creative search.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('musor-drop/src/main/java/net/execheinz/upgrader/Upgrader.java')
+          s = p.read_text()
+          if 'BuildCreativeModeTabContentsEvent' not in s:
+              s = s.replace('import net.execheinz.upgrader.registry.ModMenus;\n',
+                  'import net.execheinz.upgrader.registry.ModMenus;\n'
+                  'import net.minecraft.world.item.CreativeModeTabs;\n'
+                  'import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;\n')
+              s = s.replace('        ModItems.register(modBus);\n',
+                  '        ModItems.register(modBus);\n'
+                  '        modBus.addListener(this::addCreative);\n')
+              s = s.replace('\n}\n',
+                  '\n    private void addCreative(BuildCreativeModeTabContentsEvent event) {\n'
+                  '        if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {\n'
+                  '            event.accept(ModItems.UPGRADER);\n'
+                  '        }\n'
+                  '    }\n'
+                  '}\n')
+          p.write_text(s)
+          PY
 
           # Move resource/data namespaces to musordrop and update references.
           if [ -d musor-drop/src/main/resources/assets/upgrader ]; then
@@ -75,6 +98,9 @@ jobs:
 
           grep -q 'MODID = "musordrop"' "$MAIN"
           grep -q '^mod_id=musordrop$' musor-drop/gradle.properties
+          grep -q '^mod_version=4.0.2$' musor-drop/gradle.properties
+          grep -q 'CreativeModeTabs.TOOLS_AND_UTILITIES' "$MAIN"
+          grep -q 'event.accept(ModItems.UPGRADER)' "$MAIN"
           grep -q 'musordrop:station' musor-drop/src/main/resources/data/musordrop/recipes/station.json
 
       - name: Set up Java 17
@@ -110,21 +136,21 @@ jobs:
         run: |
           set -euxo pipefail
           ls -lah build/libs
-          JAR="$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name 'Musor-Drop-4.0.1-Forge-1.20.1.jar' | head -n1)"
+          JAR="$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name 'Musor-Drop-4.0.2-Forge-1.20.1.jar' | head -n1)"
           test -n "$JAR"
           unzip -t "$JAR"
-          cp "$JAR" build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar
-          sha256sum build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar | tee build/libs/SHA256SUMS.txt
-          unzip -p build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar META-INF/mods.toml | grep -q 'modId="musordrop"'
-          unzip -p build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar META-INF/mods.toml | grep -q 'displayName="Musor Drop"'
-          unzip -l build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar | grep -q 'assets/musordrop/'
-          unzip -l build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar | grep -q 'data/musordrop/'
+          cp "$JAR" build/libs/Musor-Drop-4.0.2-Forge-1.20.1.jar
+          sha256sum build/libs/Musor-Drop-4.0.2-Forge-1.20.1.jar | tee build/libs/SHA256SUMS.txt
+          unzip -p build/libs/Musor-Drop-4.0.2-Forge-1.20.1.jar META-INF/mods.toml | grep -q 'modId="musordrop"'
+          unzip -p build/libs/Musor-Drop-4.0.2-Forge-1.20.1.jar META-INF/mods.toml | grep -q 'displayName="Musor Drop"'
+          unzip -l build/libs/Musor-Drop-4.0.2-Forge-1.20.1.jar | grep -q 'assets/musordrop/'
+          unzip -l build/libs/Musor-Drop-4.0.2-Forge-1.20.1.jar | grep -q 'data/musordrop/'
 
       - name: Upload production JAR
         uses: actions/upload-artifact@v4
         with:
-          name: Musor-Drop-4.0.1-Forge-1.20.1
+          name: Musor-Drop-4.0.2-Forge-1.20.1
           path: |
-            musor-drop/build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar
+            musor-drop/build/libs/Musor-Drop-4.0.2-Forge-1.20.1.jar
             musor-drop/build/libs/SHA256SUMS.txt
           if-no-files-found: error
