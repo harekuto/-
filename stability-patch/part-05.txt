@@ -1,0 +1,118 @@
+d.getLong(SOLD), Math.max(0, count)));
++        d.putLong(SOLD, EconomyMath.saturatingAddPositive(nonNegative(d.getLong(SOLD)), count, Long.MAX_VALUE));
+     }
+ 
+     public static void sync(ServerPlayer player) {
+-        ModNetwork.sendToPlayer(player, S2CStatePacket.balance(getBalance(player)));
++        if (player != null) ModNetwork.sendToPlayer(player, S2CStatePacket.balance(getBalance(player)));
+     }
+ 
++    private static long cap() {
++        return Math.max(1_000L, ModConfigData.BALANCE_CAP.get());
++    }
++
++    private static long nonNegative(long value) { return Math.max(0L, value); }
++
+     private static CompoundTag data(ServerPlayer player) {
+         CompoundTag persistent = player.getPersistentData();
+         if (!persistent.contains(ROOT, Tag.TAG_COMPOUND)) persistent.put(ROOT, new CompoundTag());
+         return persistent.getCompound(ROOT);
+     }
+ 
+-    private static long safeAdd(long a, long b) {
+-        if (b <= 0) return a;
+-        if (Long.MAX_VALUE - a < b) return Long.MAX_VALUE;
+-        return a + b;
+-    }
+-
+     @SubscribeEvent
+     public static void onClone(PlayerEvent.Clone event) {
+         if (!(event.getEntity() instanceof ServerPlayer current)) return;
+diff -ruN '--exclude=*.png' '--exclude=*.webp' musor_402_src/src/main/java/net/execheinz/upgrader/economy/EconomyMath.java musor_410_src/src/main/java/net/execheinz/upgrader/economy/EconomyMath.java
+--- musor_402_src/src/main/java/net/execheinz/upgrader/economy/EconomyMath.java	1970-01-01 00:00:00.000000000 +0000
++++ musor_410_src/src/main/java/net/execheinz/upgrader/economy/EconomyMath.java	2026-09-01 16:55:52.406094763 +0000
+@@ -0,0 +1,57 @@
++package net.execheinz.upgrader.economy;
++
++/** Pure, deterministic economy math kept free of Minecraft state for fuzz testing. */
++public final class EconomyMath {
++    private EconomyMath() {}
++
++    public static double upgradeChance(double inputValue, double targetValue,
++                                       double houseEdge, double minChance, double maxChance) {
++        if (!Double.isFinite(inputValue) || !Double.isFinite(targetValue)
++            || !Double.isFinite(houseEdge) || !Double.isFinite(minChance) || !Double.isFinite(maxChance)
++            || inputValue <= 0D || targetValue <= 0D || houseEdge <= 0D) {
++            return 0D;
++        }
++        double lo = Math.max(0D, Math.min(1D, Math.min(minChance, maxChance)));
++        double hi = Math.max(lo, Math.min(1D, Math.max(minChance, maxChance)));
++        double raw = houseEdge * inputValue / targetValue;
++        if (!Double.isFinite(raw) || raw <= 0D) return 0D;
++        return Math.max(lo, Math.min(hi, raw));
++    }
++
++    public static long sellPayout(double stackValue, double sellRate, long hardCap) {
++        if (!Double.isFinite(stackValue) || !Double.isFinite(sellRate)
++            || stackValue <= 0D || sellRate <= 0D || hardCap <= 0L) {
++            return 0L;
++        }
++        double rate = Math.max(0D, Math.min(1D, sellRate));
++        double raw = stackValue * rate;
++        if (!Double.isFinite(raw) || raw <= 0D) return 0L;
++        double bounded = Math.min(raw, Math.min((double) hardCap, (double) Long.MAX_VALUE / 4D));
++        return Math.max(0L, (long) Math.floor(bounded));
++    }
++
++    public static long saturatingAddPositive(long current, long amount, long cap) {
++        long safeCap = Math.max(0L, cap);
++        long safeCurrent = Math.max(0L, Math.min(current, safeCap));
++        if (amount <= 0L || safeCurrent >= safeCap) return safeCurrent;
++        if (amount >= safeCap - safeCurrent) return safeCap;
++        return safeCurrent + amount;
++    }
++
++    public static long remainingCapacity(long current, long cap) {
++        long safeCap = Math.max(0L, cap);
++        long safeCurrent = Math.max(0L, Math.min(current, safeCap));
++        return safeCap - safeCurrent;
++    }
++
++    public static int rewardCount(double targetValue, double unitValue, int maxStack) {
++        if (!Double.isFinite(targetValue) || !Double.isFinite(unitValue)
++            || targetValue <= 0D || unitValue <= 0D || maxStack <= 0) {
++            return 1;
++        }
++        double ratio = targetValue / unitValue;
++        if (!Double.isFinite(ratio) || ratio <= 1D) return 1;
++        long rounded = Math.round(Math.min(ratio, Integer.MAX_VALUE));
++        return (int) Math.max(1L, Math.min((long) maxStack, rounded));
++    }
++}
+diff -ruN '--exclude=*.png' '--exclude=*.webp' musor_402_src/src/main/java/net/execheinz/upgrader/economy/ItemPolicyService.java musor_410_src/src/main/java/net/execheinz/upgrader/economy/ItemPolicyService.java
+--- musor_402_src/src/main/java/net/execheinz/upgrader/economy/ItemPolicyService.java	2026-09-01 10:31:44.000000000 +0000
++++ musor_410_src/src/main/java/net/execheinz/upgrader/economy/ItemPolicyService.java	2026-09-01 17:04:40.570051873 +0000
+@@ -1,6 +1,7 @@
+ package net.execheinz.upgrader.economy;
+ 
+ import java.util.Set;
++import java.util.concurrent.ConcurrentHashMap;
+ import net.execheinz.upgrader.Upgrader;
+ import net.execheinz.upgrader.registry.ModItems;
+ import net.minecraft.nbt.CompoundTag;
+@@ -11,32 +12,62 @@
+ import net.minecraft.world.item.SpawnEggItem;
+ import net.minecraftforge.registries.ForgeRegistries;
+ 
++/** Central policy for what may be upgraded, sold, or generated by cases. */
+ public final class ItemPolicyService {
++    private static final Set<ResourceLocation> WARNED_UNSAFE = ConcurrentHashMap.newKeySet();
+     private static final Set<String> BANNED_PATHS = Set.of(
+         "air", "bedrock", "barrier", "command_block", "chain_command_block", "repeating_command_block",
+         "structure_block", "structure_void", "jigsaw", "light", "debug_stick", "knowledge_book", "spawner"
+     );
+ 
+     public static boolean isCaseRewardEligible(Item item) {
+-        if (item == null || item == Items.AIR || item == ModItems.UPGRADER.get() || item instanceof SpawnEggItem) return false;
+-        ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
+-    
