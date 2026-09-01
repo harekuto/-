@@ -1,0 +1,112 @@
+     return id != null && !id.getNamespace().equals(Upgrader.MODID) && !BANNED_PATHS.contains(id.getPath());
++        return isBaseEligible(item) && hasSafeDefaultStack(item);
+     }
+ 
+     public static boolean isModdedRewardEligible(Item item) {
++        if (!isCaseRewardEligible(item)) return false;
+         ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
+-        return isCaseRewardEligible(item) && id != null && !id.getNamespace().equals("minecraft");
++        return id != null && !id.getNamespace().equals("minecraft") && !id.getNamespace().equals(Upgrader.MODID);
+     }
+ 
+     public static boolean isUpgradeTargetEligible(Item item) {
+         return isCaseRewardEligible(item);
+     }
+ 
++    public static boolean isUpgradeStakeEligible(ItemStack stack) {
++        return stack != null && !stack.isEmpty() && isBaseEligible(stack.getItem()) && !hasNestedInventoryData(stack);
++    }
++
+     public static boolean isSellable(ItemStack stack) {
+-        if (stack == null || stack.isEmpty() || stack.is(ModItems.UPGRADER.get()) || !isCaseRewardEligible(stack.getItem())) return false;
++        return stack != null && !stack.isEmpty() && isBaseEligible(stack.getItem()) && !hasNestedInventoryData(stack);
++    }
++
++    private static boolean isBaseEligible(Item item) {
++        if (item == null || item == Items.AIR || item instanceof SpawnEggItem) return false;
++        if (item == ModItems.UPGRADER.get()) return false;
++        ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
++        if (id == null || id.getNamespace().equals(Upgrader.MODID)) return false;
++        return !BANNED_PATHS.contains(id.getPath());
++    }
++
++    private static boolean hasSafeDefaultStack(Item item) {
++        try {
++            ItemStack stack = new ItemStack(item);
++            return !stack.isEmpty() && stack.getMaxStackSize() > 0;
++        } catch (RuntimeException ex) {
++            ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
++            if (id == null || WARNED_UNSAFE.add(id)) {
++                Upgrader.LOGGER.warn("Skipping unsafe item {} from Musor Drop generated pools", id, ex);
++            }
++            return false;
++        }
++    }
++
++    private static boolean hasNestedInventoryData(ItemStack stack) {
+         CompoundTag tag = stack.getTag();
+-        if (tag != null && (tag.contains("BlockEntityTag") || tag.contains("Items"))) return false;
+-        return true;
++        if (tag == null) return false;
++        // Selling/upgrading arbitrary nested inventories is a common duplication/value exploit.
++        return tag.contains("BlockEntityTag") || tag.contains("Items") || tag.contains("Inventory");
+     }
+ 
+     private ItemPolicyService() {}
+diff -ruN '--exclude=*.png' '--exclude=*.webp' musor_402_src/src/main/java/net/execheinz/upgrader/economy/ItemValueService.java musor_410_src/src/main/java/net/execheinz/upgrader/economy/ItemValueService.java
+--- musor_402_src/src/main/java/net/execheinz/upgrader/economy/ItemValueService.java	2026-09-01 10:31:44.000000000 +0000
++++ musor_410_src/src/main/java/net/execheinz/upgrader/economy/ItemValueService.java	2026-09-01 16:55:38.325982228 +0000
+@@ -27,6 +27,8 @@
+         return CACHE.computeIfAbsent(item, ItemValueService::computeUnitValue);
+     }
+ 
++    public static void invalidateCache() { CACHE.clear(); }
++
+     private static double computeUnitValue(Item item) {
+         ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
+         if (id == null) return 0D;
+diff -ruN '--exclude=*.png' '--exclude=*.webp' musor_402_src/src/main/java/net/execheinz/upgrader/economy/PendingRewardService.java musor_410_src/src/main/java/net/execheinz/upgrader/economy/PendingRewardService.java
+--- musor_402_src/src/main/java/net/execheinz/upgrader/economy/PendingRewardService.java	1970-01-01 00:00:00.000000000 +0000
++++ musor_410_src/src/main/java/net/execheinz/upgrader/economy/PendingRewardService.java	2026-09-01 17:04:28.672145102 +0000
+@@ -0,0 +1,101 @@
++package net.execheinz.upgrader.economy;
++
++import net.execheinz.upgrader.Upgrader;
++import net.minecraft.nbt.CompoundTag;
++import net.minecraft.nbt.ListTag;
++import net.minecraft.nbt.Tag;
++import net.minecraft.server.level.ServerPlayer;
++import net.minecraft.world.item.ItemStack;
++import net.minecraftforge.event.entity.player.PlayerEvent;
++import net.minecraftforge.eventbus.api.SubscribeEvent;
++
++/** Fail-safe queue used only when a case reward cannot be inserted or dropped immediately. */
++public final class PendingRewardService {
++    private static final String KEY = "MusorDropPendingRewards";
++    private static final int MAX_PENDING = 32;
++
++    public static void queue(ServerPlayer player, ItemStack stack) {
++        if (player == null || stack == null || stack.isEmpty()) return;
++        ListTag list = pending(player);
++        if (list.size() >= MAX_PENDING) {
++            Upgrader.LOGGER.error("Pending reward queue is full for {}; keeping newest reward as world drop fallback", player.getGameProfile().getName());
++            try { player.drop(stack.copy(), false); } catch (RuntimeException ex) { Upgrader.LOGGER.error("World-drop fallback also failed", ex); }
++            return;
++        }
++        try {
++            CompoundTag encoded = new CompoundTag();
++            stack.copy().save(encoded);
++            list.add(encoded);
++            player.getPersistentData().put(KEY, list);
++            Upgrader.LOGGER.warn("Queued a Musor Drop reward for later delivery to {}", player.getGameProfile().getName());
++        } catch (RuntimeException ex) {
++            Upgrader.LOGGER.error("Could not serialize pending Musor Drop reward", ex);
++            try { player.drop(stack.copy(), false); } catch (RuntimeException dropEx) { Upgrader.LOGGER.error("Final reward drop fallback failed", dropEx); }
++        }
++    }
++
++    public static void flush(ServerPlayer player) {
++        if (player == null) return;
++        ListTag list = pending(player);
++        if (list.isEmpty()) return;
++
