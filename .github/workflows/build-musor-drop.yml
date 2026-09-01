@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +23,59 @@ jobs:
           unzip -q /tmp/musor-drop-source.zip -d musor-drop
           test -f musor-drop/build.gradle
           test -f musor-drop/src/main/java/net/execheinz/upgrader/Upgrader.java
+
+      - name: Apply Musor Drop 4.0.1 source fixes
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SCREEN='musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java'
+          MAIN='musor-drop/src/main/java/net/execheinz/upgrader/Upgrader.java'
+          ITEMS='musor-drop/src/main/java/net/execheinz/upgrader/registry/ModItems.java'
+          MENUS='musor-drop/src/main/java/net/execheinz/upgrader/registry/ModMenus.java'
+          ITEM='musor-drop/src/main/java/net/execheinz/upgrader/item/UpgraderItem.java'
+
+          # Fix the real Forge 1.20.1 compile error found by the first clean build.
+          sed -i 's/renderTooltip(g, mouseX, mouseY);/renderCaseTooltip(g, mouseX, mouseY);/' "$SCREEN"
+          sed -i 's/private void renderTooltip(GuiGraphics g, int mouseX, int mouseY)/private void renderCaseTooltip(GuiGraphics g, int mouseX, int mouseY)/' "$SCREEN"
+
+          # The actual Forge identity is Musor Drop, not Upgrader. Java package names remain an internal implementation detail.
+          sed -i 's/public static final String MODID = "upgrader";/public static final String MODID = "musordrop";/' "$MAIN"
+          sed -i 's/mod_id=upgrader/mod_id=musordrop/' musor-drop/gradle.properties
+          sed -i 's/mod_version=4.0.0-musordrop/mod_version=4.0.1/' musor-drop/gradle.properties
+          sed -i 's/mod_group_id=net.execheinz.upgrader/mod_group_id=net.execheinz.musordrop/' musor-drop/gradle.properties
+          sed -i 's/EXEcheINZ (original Upgrader), Musor Drop rebuild/EXEcheINZ (original base), Musor Drop rebuild/' musor-drop/gradle.properties
+
+          # Stable Musor Drop registry IDs.
+          sed -i 's/ITEMS.register("upgrader",/ITEMS.register("station",/' "$ITEMS"
+          sed -i 's/MENUS.register("upgrader",/MENUS.register("station",/' "$MENUS"
+          sed -i 's/"menu.upgrader.title"/"menu.musordrop.title"/' "$ITEM"
+
+          # Move resource/data namespaces to musordrop and update references.
+          if [ -d musor-drop/src/main/resources/assets/upgrader ]; then
+            mv musor-drop/src/main/resources/assets/upgrader musor-drop/src/main/resources/assets/musordrop
+          fi
+          if [ -d musor-drop/src/main/resources/data/upgrader ]; then
+            mv musor-drop/src/main/resources/data/upgrader musor-drop/src/main/resources/data/musordrop
+          fi
+          if [ -f musor-drop/src/main/resources/assets/musordrop/models/item/upgrader.json ]; then
+            mv musor-drop/src/main/resources/assets/musordrop/models/item/upgrader.json musor-drop/src/main/resources/assets/musordrop/models/item/station.json
+          fi
+          if [ -f musor-drop/src/main/resources/data/musordrop/recipes/upgrader.json ]; then
+            mv musor-drop/src/main/resources/data/musordrop/recipes/upgrader.json musor-drop/src/main/resources/data/musordrop/recipes/station.json
+          fi
+          find musor-drop/src/main/resources -type f \( -name '*.json' -o -name '*.mcmeta' \) -print0 | xargs -0 sed -i \
+            -e 's/upgrader:/musordrop:/g' \
+            -e 's/item\.upgrader\.upgrader/item.musordrop.station/g' \
+            -e 's/menu\.upgrader\.title/menu.musordrop.title/g' \
+            -e 's/gui\.upgrader\./gui.musordrop./g' \
+            -e 's/musordrop:upgrader/musordrop:station/g'
+
+          # Keep the station art Minecraft-native and valid even without an external custom renderer.
+          printf '%s\n' '{"parent":"minecraft:item/generated","textures":{"layer0":"minecraft:item/amethyst_shard"}}' > musor-drop/src/main/resources/assets/musordrop/models/item/station.json
+
+          grep -q 'MODID = "musordrop"' "$MAIN"
+          grep -q '^mod_id=musordrop$' musor-drop/gradle.properties
+          grep -q 'musordrop:station' musor-drop/src/main/resources/data/musordrop/recipes/station.json
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -57,17 +110,21 @@ jobs:
         run: |
           set -euxo pipefail
           ls -lah build/libs
-          JAR="$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -n1)"
+          JAR="$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name 'Musor-Drop-4.0.1-Forge-1.20.1.jar' | head -n1)"
           test -n "$JAR"
           unzip -t "$JAR"
-          sha256sum "$JAR" | tee build/libs/SHA256SUMS.txt
-          cp "$JAR" build/libs/Musor-Drop-4.0.0-Forge-1.20.1.jar
+          cp "$JAR" build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar
+          sha256sum build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar | tee build/libs/SHA256SUMS.txt
+          unzip -p build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar META-INF/mods.toml | grep -q 'modId="musordrop"'
+          unzip -p build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar META-INF/mods.toml | grep -q 'displayName="Musor Drop"'
+          unzip -l build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar | grep -q 'assets/musordrop/'
+          unzip -l build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar | grep -q 'data/musordrop/'
 
       - name: Upload production JAR
         uses: actions/upload-artifact@v4
         with:
-          name: Musor-Drop-4.0.0-Forge-1.20.1
+          name: Musor-Drop-4.0.1-Forge-1.20.1
           path: |
-            musor-drop/build/libs/Musor-Drop-4.0.0-Forge-1.20.1.jar
+            musor-drop/build/libs/Musor-Drop-4.0.1-Forge-1.20.1.jar
             musor-drop/build/libs/SHA256SUMS.txt
           if-no-files-found: error
