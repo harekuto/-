@@ -1,10 +1,186 @@
-name: Build Musor Drop
+name: Build Musor Drop Stability Core
 
 on:
+  push:
+    branches: [ musor-4.1.0-stability ]
+    paths:
+      - 'build-input/stability/**'
+      - '.github/workflows/build-musor-drop.yml'
   workflow_dispatch:
 
 jobs:
-  idle:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - run: echo "Staging Musor Drop source update"
+      - name: Checkout stability branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct clean source and apply stability patch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git fetch origin main --depth=1
+          rm -rf /tmp/base-input /tmp/musor-base.zip /tmp/musor-stability.zip musor-drop
+          mkdir -p /tmp/base-input musor-drop
+          git archive --format=tar origin/main build-input | tar -xf - -C /tmp/base-input
+          cat /tmp/base-input/build-input/part-*.b64 | base64 -d > /tmp/musor-base.zip
+          unzip -q /tmp/musor-base.zip -d musor-drop
+          test -f musor-drop/build.gradle
+          test -f musor-drop/src/main/java/net/execheinz/upgrader/Upgrader.java
+
+          # Normalize the historic source to the real Musor Drop identity before overlaying 4.1.0.
+          MAIN='musor-drop/src/main/java/net/execheinz/upgrader/Upgrader.java'
+          ITEMS='musor-drop/src/main/java/net/execheinz/upgrader/registry/ModItems.java'
+          MENUS='musor-drop/src/main/java/net/execheinz/upgrader/registry/ModMenus.java'
+          ITEM='musor-drop/src/main/java/net/execheinz/upgrader/item/UpgraderItem.java'
+          SCREEN='musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java'
+          sed -i 's/public static final String MODID = "upgrader";/public static final String MODID = "musordrop";/' "$MAIN" || true
+          sed -i 's/ITEMS.register("upgrader",/ITEMS.register("station",/' "$ITEMS" || true
+          sed -i 's/MENUS.register("upgrader",/MENUS.register("station",/' "$MENUS" || true
+          sed -i 's/"menu.upgrader.title"/"menu.musordrop.title"/' "$ITEM" || true
+          sed -i 's/renderTooltip(g, mouseX, mouseY);/renderCaseTooltip(g, mouseX, mouseY);/' "$SCREEN" || true
+          sed -i 's/private void renderTooltip(GuiGraphics g, int mouseX, int mouseY)/private void renderCaseTooltip(GuiGraphics g, int mouseX, int mouseY)/' "$SCREEN" || true
+          if [ -d musor-drop/src/main/resources/assets/upgrader ]; then
+            mkdir -p musor-drop/src/main/resources/assets
+            mv musor-drop/src/main/resources/assets/upgrader musor-drop/src/main/resources/assets/musordrop
+          fi
+          if [ -d musor-drop/src/main/resources/data/upgrader ]; then
+            mkdir -p musor-drop/src/main/resources/data
+            mv musor-drop/src/main/resources/data/upgrader musor-drop/src/main/resources/data/musordrop
+          fi
+          if [ -f musor-drop/src/main/resources/assets/musordrop/models/item/upgrader.json ]; then
+            mv musor-drop/src/main/resources/assets/musordrop/models/item/upgrader.json musor-drop/src/main/resources/assets/musordrop/models/item/station.json
+          fi
+          if [ -f musor-drop/src/main/resources/data/musordrop/recipes/upgrader.json ]; then
+            mv musor-drop/src/main/resources/data/musordrop/recipes/upgrader.json musor-drop/src/main/resources/data/musordrop/recipes/station.json
+          fi
+          find musor-drop/src/main/resources -type f \( -name '*.json' -o -name '*.mcmeta' \) -print0 | xargs -0 -r sed -i \
+            -e 's/upgrader:/musordrop:/g' \
+            -e 's/item\.upgrader\.upgrader/item.musordrop.station/g' \
+            -e 's/menu\.upgrader\.title/menu.musordrop.title/g' \
+            -e 's/gui\.upgrader\./gui.musordrop./g' \
+            -e 's/musordrop:upgrader/musordrop:station/g'
+
+          cat build-input/stability/part-*.b64 | base64 -d > /tmp/musor-stability.zip
+          unzip -qo /tmp/musor-stability.zip -d musor-drop
+
+          # Keep the custom Musor Drop station texture instead of the vanilla amethyst placeholder.
+          mkdir -p musor-drop/src/main/resources/assets/musordrop/models/item
+          printf '%s\n' '{"parent":"minecraft:item/generated","textures":{"layer0":"musordrop:item/station"}}' > musor-drop/src/main/resources/assets/musordrop/models/item/station.json
+
+          grep -q 'MODID = "musordrop"' "$MAIN"
+          grep -q '^mod_id=musordrop$' musor-drop/gradle.properties
+          grep -q '^mod_version=4.1.0$' musor-drop/gradle.properties
+          grep -q 'ITEMS.register("station"' "$ITEMS"
+          grep -q 'MENUS.register("station"' "$MENUS"
+          grep -q 'musordrop:station' musor-drop/src/main/resources/data/musordrop/recipes/station.json
+          test -f musor-drop/src/main/java/net/execheinz/upgrader/economy/EconomyMath.java
+          test -f musor-drop/src/main/java/net/execheinz/upgrader/economy/ActionThrottleService.java
+          test -f musor-drop/src/main/java/net/execheinz/upgrader/economy/PendingRewardService.java
+          test -f musor-drop/src/test/java/net/execheinz/upgrader/economy/CoreStabilityStressTest.java
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.8
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Static source audit
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ! grep -R --line-number --fixed-string 'catch (Throwable' musor-drop/src/main/java
+          ! grep -R --line-number -E 'm_[0-9]{3,}_' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'System.out.' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'Minecraft.getInstance().setScreen' musor-drop/src/main/java
+          test "$(find musor-drop/src/main/java -name '*.java' | wc -l)" -ge 30
+          grep -q 'PROTOCOL = "5"' musor-drop/src/main/java/net/execheinz/upgrader/network/ModNetwork.java
+          grep -q '12_000' musor-drop/src/test/java/net/execheinz/upgrader/economy/CoreStabilityStressTest.java
+
+      - name: Clean tests and Forge production build
+        working-directory: musor-drop
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle --no-daemon clean test build --stacktrace
+
+      - name: Require more than 10000 executed JUnit tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          files = list(Path('musor-drop/build/test-results/test').glob('TEST-*.xml'))
+          assert files, 'No JUnit XML results found'
+          tests = failures = errors = skipped = 0
+          for f in files:
+              root = ET.parse(f).getroot()
+              tests += int(root.attrib.get('tests', 0))
+              failures += int(root.attrib.get('failures', 0))
+              errors += int(root.attrib.get('errors', 0))
+              skipped += int(root.attrib.get('skipped', 0))
+          print(f'JUNIT_TOTAL={tests} FAILURES={failures} ERRORS={errors} SKIPPED={skipped}')
+          assert tests >= 12000, f'Expected at least 12000 executed tests, got {tests}'
+          assert failures == 0 and errors == 0, 'JUnit failures/errors present'
+          Path('musor-drop/build/test-count.txt').write_text(
+              f'JUnit tests: {tests}\nFailures: {failures}\nErrors: {errors}\nSkipped: {skipped}\n', encoding='utf-8')
+          PY
+
+      - name: Production JAR audit
+        working-directory: musor-drop
+        shell: bash
+        run: |
+          set -euxo pipefail
+          JAR="$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -n1)"
+          test -n "$JAR"
+          unzip -t "$JAR"
+          FINAL='build/libs/Musor-Drop-4.1.0-Forge-1.20.1-Stability-Core.jar'
+          cp "$JAR" "$FINAL"
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'modId="musordrop"'
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'displayName="Musor Drop"'
+          unzip -l "$FINAL" | grep -q 'assets/musordrop/'
+          unzip -l "$FINAL" | grep -q 'data/musordrop/'
+          unzip -l "$FINAL" | grep -q 'assets/musordrop/textures/item/station.png'
+          ! unzip -l "$FINAL" | grep -E '(^|/)(src|stubs|test-classes|\.gradle|logs|crash-reports|__pycache__|\.env)(/|$)'
+          python3 - <<'PY'
+          import json, re, struct, zipfile
+          from pathlib import Path
+          jar=Path('build/libs/Musor-Drop-4.1.0-Forge-1.20.1-Stability-Core.jar')
+          bad=[]; classes=0; jsons=0
+          secret=re.compile(rb'(sk-[A-Za-z0-9_-]{20,}|discord(?:app)?\.com/api/webhooks|BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY|api[_-]?key\s*[=:])', re.I)
+          with zipfile.ZipFile(jar) as z:
+              for n in z.namelist():
+                  data=z.read(n)
+                  if n.endswith('.class'):
+                      classes += 1
+                      if data[:4] != b'\xca\xfe\xba\xbe': bad.append((n,'magic'))
+                      else:
+                          major=struct.unpack('>H', data[6:8])[0]
+                          if major != 61: bad.append((n,f'major={major}'))
+                  if n.endswith('.json'):
+                      json.loads(data.decode('utf-8')); jsons += 1
+                  if secret.search(data): bad.append((n,'secret-pattern'))
+          print('CLASS_COUNT', classes, 'JSON_COUNT', jsons, 'BAD', bad)
+          assert classes >= 30
+          assert not bad
+          PY
+          sha256sum "$FINAL" | tee build/libs/SHA256SUMS.txt
+
+      - name: Upload stability production artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Musor-Drop-4.1.0-Forge-1.20.1-Stability-Core
+          path: |
+            musor-drop/build/libs/Musor-Drop-4.1.0-Forge-1.20.1-Stability-Core.jar
+            musor-drop/build/libs/SHA256SUMS.txt
+            musor-drop/build/test-count.txt
+          if-no-files-found: error
