@@ -1,0 +1,125 @@
+            }
++                }
+             }
+-        }
+-        return out;
++            return List.copyOf(out);
++        });
+     }
+ 
+     private static List<Item> allPool() {
+         List<Item> cached = ALL_CACHE.get();
+         if (cached != null) return cached;
+-        List<Item> built = ForgeRegistries.ITEMS.getValues().stream().filter(ItemPolicyService::isCaseRewardEligible).toList();
++        List<Item> built = ForgeRegistries.ITEMS.getValues().stream()
++            .filter(ItemPolicyService::isCaseRewardEligible)
++            .toList();
+         ALL_CACHE.compareAndSet(null, List.copyOf(built));
+         return ALL_CACHE.get();
+     }
+@@ -147,18 +173,21 @@
+     private static List<Item> moddedPool() {
+         List<Item> cached = MODDED_CACHE.get();
+         if (cached != null) return cached;
+-        List<Item> built = ForgeRegistries.ITEMS.getValues().stream().filter(ItemPolicyService::isModdedRewardEligible).toList();
++        List<Item> built = ForgeRegistries.ITEMS.getValues().stream()
++            .filter(ItemPolicyService::isModdedRewardEligible)
++            .toList();
+         MODDED_CACHE.compareAndSet(null, List.copyOf(built));
+         return MODDED_CACHE.get();
+     }
+ 
+-    private static void give(ServerPlayer player, ItemStack reward) {
+-        ItemStack remaining = reward.copy();
+-        player.getInventory().add(remaining);
+-        if (!remaining.isEmpty()) player.drop(remaining, false);
++    private static double lerp(double a, double b, double t) {
++        double safeT = Math.max(0D, Math.min(1D, t));
++        return a + (b - a) * safeT;
++    }
++
++    private static void error(ServerPlayer player, String code) {
++        ModNetwork.sendToPlayer(player, S2CStatePacket.error(CurrencyService.getBalance(player), code));
+     }
+ 
+-    private static double lerp(double a, double b, double t) { return a + (b - a) * t; }
+-    private static void error(ServerPlayer p, String code) { ModNetwork.sendToPlayer(p, S2CStatePacket.error(CurrencyService.getBalance(p), code)); }
+     private CaseService() {}
+ }
+diff -ruN '--exclude=*.png' '--exclude=*.webp' musor_402_src/src/main/java/net/execheinz/upgrader/client/ClientState.java musor_410_src/src/main/java/net/execheinz/upgrader/client/ClientState.java
+--- musor_402_src/src/main/java/net/execheinz/upgrader/client/ClientState.java	2026-09-01 10:33:39.000000000 +0000
++++ musor_410_src/src/main/java/net/execheinz/upgrader/client/ClientState.java	2026-09-01 17:00:27.927854085 +0000
+@@ -2,6 +2,7 @@
+ 
+ import net.execheinz.upgrader.network.packet.S2CStatePacket;
+ 
++/** Client mirror of server-authoritative state. Mutated only from the Minecraft client thread. */
+ public final class ClientState {
+     public static long balance;
+     public static long caseSerial;
+@@ -9,6 +10,7 @@
+     public static String rewardId = "";
+     public static int rewardCount;
+     public static long sellDelta;
++    public static long sellSerial;
+     public static String error = "";
+     public static long errorSerial;
+     public static long upgradeSerial;
+@@ -17,20 +19,40 @@
+     public static double upgradeChance;
+ 
+     public static void accept(S2CStatePacket packet) {
++        if (packet == null) return;
+         switch (packet.type()) {
+-            case S2CStatePacket.BALANCE -> balance = packet.balance();
++            case S2CStatePacket.BALANCE -> balance = Math.max(0L, packet.balance());
+             case S2CStatePacket.CASE_RESULT -> {
+-                balance = packet.balance();
+-                caseId = packet.caseId(); rewardId = packet.rewardId(); rewardCount = packet.count(); caseSerial++;
++                balance = Math.max(0L, packet.balance());
++                caseId = nz(packet.caseId());
++                rewardId = nz(packet.rewardId());
++                rewardCount = Math.max(1, packet.count());
++                caseSerial++;
++            }
++            case S2CStatePacket.SOLD -> {
++                balance = Math.max(0L, packet.balance());
++                sellDelta = Math.max(0L, packet.delta());
++                sellSerial++;
++            }
++            case S2CStatePacket.ERROR -> {
++                balance = Math.max(0L, packet.balance());
++                error = nz(packet.message());
++                errorSerial++;
+             }
+-            case S2CStatePacket.SOLD -> { balance = packet.balance(); sellDelta = packet.delta(); }
+-            case S2CStatePacket.ERROR -> { balance = packet.balance(); error = packet.message(); errorSerial++; }
+             case S2CStatePacket.UPGRADE_RESULT -> {
+-                upgradeSuccess = packet.success(); upgradeReward = packet.rewardId(); upgradeChance = packet.chance(); upgradeSerial++;
++                upgradeSuccess = packet.success();
++                upgradeReward = nz(packet.rewardId());
++                upgradeChance = safeChance(packet.chance());
++                upgradeSerial++;
+             }
+             default -> { }
+         }
+     }
+ 
++    private static String nz(String value) { return value == null ? "" : value; }
++    private static double safeChance(double value) {
++        if (!Double.isFinite(value)) return 0D;
++        return Math.max(0D, Math.min(1D, value));
++    }
+     private ClientState() {}
+ }
+diff -ruN '--exclude=*.png' '--exclude=*.webp' musor_402_src/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java musor_410_src/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java
+--- musor_402_src/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java	2026-09-01 15:18:57.000000000 +0000
++++ musor_410_src/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java	2026-09-01 17:01:28.891837750 +0000
+@@ -71,6 +71,7 @@
+     private final CaseAnimationState caseAnimation = new CaseAnimationState();
+     private long seenCaseSerial;
+     private long seenUpgradeSerial;
++    private long seenSellSerial;
+     private long seenErrorSerial;
+     private String toast = "";
+     private long toastUnt
