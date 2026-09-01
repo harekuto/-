@@ -1,0 +1,129 @@
+ext) return false;
++        long newNext = cooldown == 0 ? now : safeTickAdd(now, cooldown);
++        root.putLong(action.key, newNext);
++        return true;
++    }
++
++    private static CompoundTag root(ServerPlayer player) {
++        CompoundTag persistent = player.getPersistentData();
++        if (!persistent.contains(ROOT, Tag.TAG_COMPOUND)) persistent.put(ROOT, new CompoundTag());
++        return persistent.getCompound(ROOT);
++    }
++
++    private static long safeTickAdd(long now, int delta) {
++        if (Long.MAX_VALUE - now < delta) return Long.MAX_VALUE;
++        return now + delta;
++    }
++
++    private ActionThrottleService() {}
++}
+diff -ruN '--exclude=*.png' '--exclude=*.webp' musor_402_src/src/main/java/net/execheinz/upgrader/economy/CurrencyService.java musor_410_src/src/main/java/net/execheinz/upgrader/economy/CurrencyService.java
+--- musor_402_src/src/main/java/net/execheinz/upgrader/economy/CurrencyService.java	2026-09-01 10:36:04.000000000 +0000
++++ musor_410_src/src/main/java/net/execheinz/upgrader/economy/CurrencyService.java	2026-09-01 16:58:43.015889716 +0000
+@@ -9,6 +9,7 @@
+ import net.minecraftforge.event.entity.player.PlayerEvent;
+ import net.minecraftforge.eventbus.api.SubscribeEvent;
+ 
++/** Server-authoritative persistent Musor Shards balance and statistics. */
+ public final class CurrencyService {
+     private static final String ROOT = "MusorDrop";
+     private static final String BALANCE = "Balance";
+@@ -18,58 +19,107 @@
+     private static final String SPENT = "ShardsSpent";
+ 
+     public static long getBalance(ServerPlayer player) {
+-        return data(player).getLong(BALANCE);
++        if (player == null) return 0L;
++        CompoundTag d = data(player);
++        long cap = cap();
++        long raw = d.getLong(BALANCE);
++        long safe = Math.max(0L, Math.min(cap, raw));
++        if (raw != safe) d.putLong(BALANCE, safe);
++        return safe;
+     }
+ 
++    /** Mutates balance only. Caller sends the transaction-specific state packet. */
+     public static boolean trySpend(ServerPlayer player, long amount) {
+-        if (amount < 0) return false;
++        if (player == null || amount <= 0L) return false;
+         CompoundTag d = data(player);
+-        long current = d.getLong(BALANCE);
++        long current = getBalance(player);
+         if (current < amount) return false;
+         d.putLong(BALANCE, current - amount);
+-        d.putLong(SPENT, safeAdd(d.getLong(SPENT), amount));
+-        sync(player);
++        d.putLong(SPENT, EconomyMath.saturatingAddPositive(nonNegative(d.getLong(SPENT)), amount, Long.MAX_VALUE));
++        return true;
++    }
++
++    /** Credit the complete payout or do nothing. Sales use this to avoid consuming items for partial value. */
++    public static boolean tryDepositFull(ServerPlayer player, long amount) {
++        if (player == null || amount <= 0L) return false;
++        CompoundTag d = data(player);
++        long current = getBalance(player);
++        long cap = cap();
++        if (EconomyMath.remainingCapacity(current, cap) < amount) return false;
++        long next = current + amount; // safe because remainingCapacity checked against the configured cap
++        d.putLong(BALANCE, next);
++        d.putLong(EARNED, EconomyMath.saturatingAddPositive(nonNegative(d.getLong(EARNED)), amount, Long.MAX_VALUE));
+         return true;
+     }
+ 
++    /** Gameplay income with cap. Returns the new balance. */
+     public static long deposit(ServerPlayer player, long amount) {
+-        if (amount <= 0) return getBalance(player);
++        if (player == null || amount <= 0L) return getBalance(player);
++        CompoundTag d = data(player);
++        long cap = cap();
++        long current = getBalance(player);
++        long next = EconomyMath.saturatingAddPositive(current, amount, cap);
++        long credited = Math.max(0L, next - current);
++        d.putLong(BALANCE, next);
++        d.putLong(EARNED, EconomyMath.saturatingAddPositive(nonNegative(d.getLong(EARNED)), credited, Long.MAX_VALUE));
++        return next;
++    }
++
++    /** Transaction rollback. Does not count as earned currency and optionally undoes spent statistics. */
++    public static long refund(ServerPlayer player, long amount, boolean undoSpent) {
++        if (player == null || amount <= 0L) return getBalance(player);
+         CompoundTag d = data(player);
+-        long cap = ModConfigData.BALANCE_CAP.get();
+-        long current = d.getLong(BALANCE);
+-        long next = Math.min(cap, safeAdd(current, amount));
++        long current = getBalance(player);
++        long next = EconomyMath.saturatingAddPositive(current, amount, cap());
++        long restored = Math.max(0L, next - current);
+         d.putLong(BALANCE, next);
+-        d.putLong(EARNED, safeAdd(d.getLong(EARNED), Math.max(0, next - current)));
+-        sync(player);
++        if (undoSpent && restored > 0L) {
++            long spent = nonNegative(d.getLong(SPENT));
++            d.putLong(SPENT, Math.max(0L, spent - Math.min(restored, spent)));
++        }
+         return next;
+     }
+ 
++    public static void refundSpend(ServerPlayer player, long amount) {
++        refund(player, amount, true);
++    }
++
++    public static long remainingCapacity(ServerPlayer player) {
++        return EconomyMath.remainingCapacity(getBalance(player), cap());
++    }
++
++    public static boolean canCreditFull(ServerPlayer player, long amount) {
++        return amount > 0L && remainingCapacity(player) >= amount;
++    }
++
+     public static void incrementOpened(ServerPlayer player) {
++        if (player == null) return;
+         CompoundTag d = data(player);
+-        d.putLong(OPENED, safeAdd(d.getLong(OPENED), 1));
++        d.putLong(OPENED, EconomyMath.saturatingAddPositive(nonNegative(d.getLong(OPENED)), 1L, Long.MAX_VALUE));
+     }
+ 
+     public static void incrementSold(ServerPlayer player, long count) {
++        if (player == null || count <= 0L) return;
+         CompoundTag d = data(player);
+-        d.putLong(SOLD, safeAdd(
