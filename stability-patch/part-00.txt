@@ -1,0 +1,116 @@
+diff -ruN '--exclude=*.png' '--exclude=*.webp' musor_402_src/gradle.properties musor_410_src/gradle.properties
+--- musor_402_src/gradle.properties	2026-09-01 15:18:58.000000000 +0000
++++ musor_410_src/gradle.properties	2026-09-01 17:04:50.591188584 +0000
+@@ -10,7 +10,7 @@
+ mod_id=musordrop
+ mod_name=Musor Drop
+ mod_license=All Rights Reserved
+-mod_version=4.0.1
++mod_version=4.1.0
+ mod_group_id=net.execheinz.musordrop
+ mod_authors=EXEcheINZ (original base), Musor Drop rebuild
+-mod_description=Purple Minecraft-style upgrade station with server-authoritative upgrades, Musor Shards, item selling and 224 data-driven cases.
++mod_description=Musor Drop stability-core rebuild for Minecraft 1.20.1: server-authoritative upgrades and cases, persistent Musor Shards, guarded selling, 224 themed cases and fail-safe reward delivery.
+diff -ruN '--exclude=*.png' '--exclude=*.webp' musor_402_src/src/main/java/net/execheinz/upgrader/Upgrader.java musor_410_src/src/main/java/net/execheinz/upgrader/Upgrader.java
+--- musor_402_src/src/main/java/net/execheinz/upgrader/Upgrader.java	2026-09-01 15:18:58.000000000 +0000
++++ musor_410_src/src/main/java/net/execheinz/upgrader/Upgrader.java	2026-09-01 16:58:46.261807016 +0000
+@@ -3,7 +3,9 @@
+ import com.mojang.logging.LogUtils;
+ import net.execheinz.upgrader.config.ModConfigData;
+ import net.execheinz.upgrader.economy.CurrencyService;
++import net.execheinz.upgrader.economy.PendingRewardService;
+ import net.execheinz.upgrader.network.ModNetwork;
++import net.execheinz.upgrader.registry.ModCreativeTabs;
+ import net.execheinz.upgrader.registry.ModItems;
+ import net.execheinz.upgrader.registry.ModMenus;
+ import net.minecraftforge.common.MinecraftForge;
+@@ -23,8 +25,10 @@
+         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
+         ModItems.register(modBus);
+         ModMenus.register(modBus);
++        modBus.addListener(ModCreativeTabs::addItems);
+         ModNetwork.register();
+         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, ModConfigData.SPEC, "musor-drop-common.toml");
+         MinecraftForge.EVENT_BUS.register(CurrencyService.class);
++        MinecraftForge.EVENT_BUS.register(PendingRewardService.class);
+     }
+ }
+diff -ruN '--exclude=*.png' '--exclude=*.webp' musor_402_src/src/main/java/net/execheinz/upgrader/cases/CaseService.java musor_410_src/src/main/java/net/execheinz/upgrader/cases/CaseService.java
+--- musor_402_src/src/main/java/net/execheinz/upgrader/cases/CaseService.java	2026-09-01 10:36:04.000000000 +0000
++++ musor_410_src/src/main/java/net/execheinz/upgrader/cases/CaseService.java	2026-09-01 16:59:19.463876945 +0000
+@@ -4,12 +4,17 @@
+ import java.util.Comparator;
+ import java.util.List;
+ import java.util.Locale;
++import java.util.Map;
++import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.atomic.AtomicReference;
+ import net.execheinz.upgrader.Upgrader;
+ import net.execheinz.upgrader.config.ModConfigData;
++import net.execheinz.upgrader.economy.ActionThrottleService;
+ import net.execheinz.upgrader.economy.CurrencyService;
++import net.execheinz.upgrader.economy.EconomyMath;
+ import net.execheinz.upgrader.economy.ItemPolicyService;
+ import net.execheinz.upgrader.economy.ItemValueService;
++import net.execheinz.upgrader.economy.PendingRewardService;
+ import net.execheinz.upgrader.network.ModNetwork;
+ import net.execheinz.upgrader.network.packet.S2CStatePacket;
+ import net.minecraft.resources.ResourceLocation;
+@@ -22,7 +27,7 @@
+ public final class CaseService {
+     private static final AtomicReference<List<Item>> ALL_CACHE = new AtomicReference<>();
+     private static final AtomicReference<List<Item>> MODDED_CACHE = new AtomicReference<>();
+-    private static final String LAST_ACTION = "MusorDropLastCaseTick";
++    private static final Map<String, List<Item>> THEMED_CACHE = new ConcurrentHashMap<>();
+ 
+     public static void open(ServerPlayer player, String caseId) {
+         CaseDefinition def = CaseCatalog.byId(caseId);
+@@ -30,7 +35,7 @@
+             error(player, "invalid_case");
+             return;
+         }
+-        if (!cooldownReady(player)) {
++        if (!ActionThrottleService.tryAcquire(player, ActionThrottleService.Action.CASE_OPEN, ModConfigData.CASE_COOLDOWN_TICKS.get())) {
+             error(player, "cooldown");
+             return;
+         }
+@@ -38,7 +43,15 @@
+             error(player, "not_enough");
+             return;
+         }
+-        ItemStack reward = roll(player, def);
++
++        final ItemStack reward;
++        try {
++            reward = roll(player, def);
++        } catch (RuntimeException ex) {
++            Upgrader.LOGGER.error("Case roll failed for {}", def.id(), ex);
++            error(player, "operation_failed");
++            return;
++        }
+         if (reward.isEmpty()) {
+             error(player, "no_reward");
+             return;
+@@ -47,31 +60,23 @@
+             error(player, "not_enough");
+             return;
+         }
+-        try {
+-            give(player, reward);
+-            CurrencyService.incrementOpened(player);
+-            ResourceLocation id = ForgeRegistries.ITEMS.getKey(reward.getItem());
+-            String rewardId = id == null ? "minecraft:air" : id.toString();
+-            ModNetwork.sendToPlayer(player, S2CStatePacket.caseResult(CurrencyService.getBalance(player), def.id(), rewardId, reward.getCount()));
+-        } catch (RuntimeException ex) {
+-            Upgrader.LOGGER.error("Case delivery failed for {}", def.id(), ex);
+-            CurrencyService.deposit(player, def.cost());
+-            error(player, "operation_failed");
+-        }
++
++        // Delivery is fail-safe: any remainder that cannot reach inventory/world is persisted for retry.
++        ItemStack remaining = reward.copy();
++        boolean delivered = PendingRewardService.deliver(player, remaining);
++        if (!delivered && !remaining.isEmpty()) PendingRewardService.queue(player, remaining);
++
++        CurrencyService.incrementOpened(player);
++        Re
