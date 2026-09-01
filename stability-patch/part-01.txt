@@ -1,0 +1,117 @@
+sourceLocation id = ForgeRegistries.ITEMS.getKey(reward.getItem());
++        String rewardId = id == null ? "minecraft:air" : id.toString();
++        ModNetwork.sendToPlayer(player, S2CStatePacket.caseResult(
++            CurrencyService.getBalance(player), def.id(), rewardId, reward.getCount()));
+     }
+ 
+     public static void invalidateCaches() {
+         ALL_CACHE.set(null);
+         MODDED_CACHE.set(null);
+-    }
+-
+-    private static boolean cooldownReady(ServerPlayer player) {
+-        long now = player.level().getGameTime();
+-        long last = player.getPersistentData().getLong(LAST_ACTION);
+-        int cd = ModConfigData.CASE_COOLDOWN_TICKS.get();
+-        if (last > 0 && now - last < cd) return false;
+-        player.getPersistentData().putLong(LAST_ACTION, now);
+-        return true;
++        THEMED_CACHE.clear();
+     }
+ 
+     private static ItemStack roll(ServerPlayer player, CaseDefinition def) {
+@@ -82,8 +87,10 @@
+         List<Item> pool = themedPool(def);
+         if (pool.isEmpty()) pool = allPool();
+         if (pool.isEmpty()) return ItemStack.EMPTY;
++
+         double target = def.cost() * lerp(def.returnMin(), def.returnMax(), random.nextDouble());
+         if (random.nextDouble() < def.jackpot()) target *= 1.55D;
++        if (!Double.isFinite(target) || target <= 0D) return ItemStack.EMPTY;
+ 
+         Item best = null;
+         double bestDistance = Double.MAX_VALUE;
+@@ -92,54 +99,73 @@
+             Item item = pool.get(random.nextInt(pool.size()));
+             double v = Math.max(1D, ItemValueService.unitValue(item));
+             double distance = Math.abs(Math.log(v / Math.max(1D, target)));
+-            if (distance < bestDistance) { bestDistance = distance; best = item; }
++            if (distance < bestDistance) {
++                bestDistance = distance;
++                best = item;
++            }
+         }
+         if (best == null) best = pool.stream().min(Comparator.comparingDouble(ItemValueService::unitValue)).orElse(null);
+-        if (best == null) return ItemStack.EMPTY;
+-        return stackForTarget(best, target, random, 64);
++        return best == null ? ItemStack.EMPTY : stackForTarget(best, target, random, 64);
+     }
+ 
+     private static ItemStack randomUniform(RandomSource random, List<Item> pool, boolean modsOnly) {
+         if (pool.isEmpty()) return ItemStack.EMPTY;
+         Item item = pool.get(random.nextInt(pool.size()));
+-        double unit = ItemValueService.unitValue(item);
+-        int max = 1;
+-        try { max = Math.max(1, Math.min(modsOnly ? 4 : 8, new ItemStack(item).getMaxStackSize())); } catch (RuntimeException ex) { Upgrader.LOGGER.debug("Unable to query max stack size for case reward", ex); }
+-        int count = unit >= 5_000D ? 1 : 1 + random.nextInt(max);
+-        ItemStack stack = new ItemStack(item);
+-        stack.setCount(Math.max(1, count));
+-        return stack;
++        try {
++            ItemStack stack = new ItemStack(item);
++            if (stack.isEmpty()) return ItemStack.EMPTY;
++            double unit = Math.max(0D, ItemValueService.unitValue(item));
++            int max = Math.max(1, Math.min(modsOnly ? 4 : 8, stack.getMaxStackSize()));
++            int count = unit >= 5_000D ? 1 : 1 + random.nextInt(max);
++            stack.setCount(Math.max(1, count));
++            return stack;
++        } catch (RuntimeException ex) {
++            Upgrader.LOGGER.warn("Rejected unstable random case reward {}", ForgeRegistries.ITEMS.getKey(item), ex);
++            return ItemStack.EMPTY;
++        }
+     }
+ 
+     private static ItemStack stackForTarget(Item item, double target, RandomSource random, int hardCap) {
+-        ItemStack stack = new ItemStack(item);
+-        int max = Math.max(1, Math.min(hardCap, stack.getMaxStackSize()));
+-        double unit = Math.max(1D, ItemValueService.unitValue(item));
+-        int count = (int) Math.round(target / unit);
+-        count = Math.max(1, Math.min(max, count));
+-        if (count > 1 && random.nextDouble() < 0.18D) count = Math.max(1, count - 1);
+-        stack.setCount(count);
+-        return stack;
++        try {
++            ItemStack stack = new ItemStack(item);
++            if (stack.isEmpty()) return ItemStack.EMPTY;
++            int max = Math.max(1, Math.min(Math.max(1, hardCap), stack.getMaxStackSize()));
++            double unit = Math.max(1D, ItemValueService.unitValue(item));
++            int count = EconomyMath.rewardCount(target, unit, max);
++            if (count > 1 && random.nextDouble() < 0.18D) count--;
++            stack.setCount(Math.max(1, count));
++            return stack;
++        } catch (RuntimeException ex) {
++            Upgrader.LOGGER.warn("Rejected unstable themed case reward {}", ForgeRegistries.ITEMS.getKey(item), ex);
++            return ItemStack.EMPTY;
++        }
+     }
+ 
+     private static List<Item> themedPool(CaseDefinition def) {
+         if (def.keywords().isEmpty()) return allPool();
+-        List<Item> out = new ArrayList<>();
+-        for (Item item : allPool()) {
+-            ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
+-            if (id == null) continue;
+-            String haystack = (id.getNamespace() + ":" + id.getPath()).toLowerCase(Locale.ROOT);
+-            for (String keyword : def.keywords()) {
+-                if (haystack.contains(keyword)) { out.add(item); break; }
++        return THEMED_CACHE.computeIfAbsent(def.id(), ignored -> {
++            List<Item> out = new ArrayList<>();
++            for (Item item : allPool()) {
++                ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
++                if (id == null) continue;
++                String haystack = (id.getNamespace() + ":" + id.getPath()).toLowerCase(Locale.ROOT);
++                for (String keyword : def.keywords()) {
++                    if (keyword != null && !keyword.isBlank() && haystack.contains(keyword.toLowerCase(Locale.ROOT))) {
++                        out.add(item);
++                        break;
++        
