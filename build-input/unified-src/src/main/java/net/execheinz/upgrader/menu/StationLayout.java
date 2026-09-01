@@ -10,7 +10,8 @@ public final class StationLayout {
 
     public static final int INVENTORY_X = 112;
     public static final int INVENTORY_Y = 210;
-    public static final int HOTBAR_Y = 266;
+    /** Leaves one pixel for the custom slot bevel inside the 284px container. */
+    public static final int HOTBAR_Y = 265;
 
     private StationLayout() {}
 }
