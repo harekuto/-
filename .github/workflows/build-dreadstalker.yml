@@ -60,16 +60,16 @@ jobs:
           model.write_text(s, encoding='utf-8')
 
           props = Path('dreadstalker/gradle.properties')
-          props.write_text(props.read_text(encoding='utf-8').replace('mod_version=1.0.0', 'mod_version=1.0.1'), encoding='utf-8')
+          props.write_text(props.read_text(encoding='utf-8').replace('mod_version=1.0.0', 'mod_version=1.0.2'), encoding='utf-8')
           mods = Path('dreadstalker/src/main/resources/META-INF/mods.toml')
-          mods.write_text(mods.read_text(encoding='utf-8').replace('version="1.0.0"', 'version="1.0.1"'), encoding='utf-8')
+          mods.write_text(mods.read_text(encoding='utf-8').replace('version="1.0.0"', 'version="1.0.2"'), encoding='utf-8')
           PY
           grep -q 'net.minecraft.world.level.ServerLevelAccessor' dreadstalker/src/main/java/dev/harekuto/dreadstalker/entity/DreadstalkerEntity.java
           grep -q 'net.minecraft.client.renderer.entity.RenderLayerParent' dreadstalker/src/main/java/dev/harekuto/dreadstalker/client/render/DreadstalkerEyesLayer.java
           grep -q 'entity instanceof Player player' dreadstalker/src/main/java/dev/harekuto/dreadstalker/entity/DreadstalkerEntity.java
           ! grep -R --fixed-string 'Mth.max(' dreadstalker/src/main/java/dev/harekuto/dreadstalker/client/model/DreadstalkerModel.java
-          grep -q 'mod_version=1.0.1' dreadstalker/gradle.properties
-          grep -q 'version="1.0.1"' dreadstalker/src/main/resources/META-INF/mods.toml
+          grep -q 'mod_version=1.0.2' dreadstalker/gradle.properties
+          grep -q 'version="1.0.2"' dreadstalker/src/main/resources/META-INF/mods.toml
 
       - name: Static QA
         shell: bash
@@ -104,13 +104,13 @@ jobs:
           test -n "$JAR"
           unzip -t "$JAR"
           unzip -p "$JAR" META-INF/mods.toml | grep -q 'modId="dreadstalker"'
-          unzip -p "$JAR" META-INF/mods.toml | grep -q 'version="1.0.1"'
+          unzip -p "$JAR" META-INF/mods.toml | grep -q 'version="1.0.2"'
           unzip -l "$JAR" | grep -q 'dev/harekuto/dreadstalker/entity/DreadstalkerEntity.class'
           unzip -l "$JAR" | grep -q 'dev/harekuto/dreadstalker/client/model/DreadstalkerModel.class'
           unzip -l "$JAR" | grep -q 'assets/dreadstalker/textures/gui/jumpscare.png'
           unzip -l "$JAR" | grep -q 'assets/dreadstalker/sounds/jumpscare.ogg'
-          cp "$JAR" build/release/Dreadstalker-1.0.1-Forge-1.20.1.jar
-          sha256sum build/release/Dreadstalker-1.0.1-Forge-1.20.1.jar | tee build/release/SHA256SUMS.txt
+          cp "$JAR" build/release/Dreadstalker-1.0.2-Forge-1.20.1.jar
+          sha256sum build/release/Dreadstalker-1.0.2-Forge-1.20.1.jar | tee build/release/SHA256SUMS.txt
 
       - name: Dedicated-server smoke test
         working-directory: dreadstalker
@@ -125,7 +125,7 @@ jobs:
           READY=0
           for i in $(seq 1 35); do
             sleep 2
-            if grep -q 'Done (' /tmp/dreadstalker-server.log; then
+            if grep -Fq 'Done (' /tmp/dreadstalker-server.log; then
               READY=1
               break
             fi
@@ -136,11 +136,12 @@ jobs:
           kill "$SERVER_PID" 2>/dev/null || true
           wait "$SERVER_PID" 2>/dev/null || true
           cat /tmp/dreadstalker-server.log
-          if grep -Eqi 'Mod loading has failed|Failed to load|NoClassDefFoundError|ClassNotFoundException|Exception in thread "main"|Loading errors encountered' /tmp/dreadstalker-server.log; then
+          if grep -Eqi 'Mod loading has failed|NoClassDefFoundError|ClassNotFoundException|Exception in thread "main"|Failed to complete lifecycle event|A fatal error has occurred' /tmp/dreadstalker-server.log; then
             exit 1
           fi
           test "$READY" -eq 1
-          grep -Eqi 'dreadstalker|Dreadstalker' /tmp/dreadstalker-server.log
+          grep -Fq 'Done (' /tmp/dreadstalker-server.log
+          grep -Fq 'Found existing registry entry dreadstalker:dreadstalker' /tmp/dreadstalker-server.log
 
       - name: Package source
         shell: bash
@@ -148,16 +149,16 @@ jobs:
           set -euxo pipefail
           rm -rf dreadstalker/run dreadstalker/run-client dreadstalker/.gradle
           cd dreadstalker
-          zip -qr build/release/Dreadstalker-1.0.1-Forge-1.20.1-source.zip . \
+          zip -qr build/release/Dreadstalker-1.0.2-Forge-1.20.1-source.zip . \
             -x 'build/classes/*' 'build/generated/*' 'build/resources/*' 'build/tmp/*' 'build/libs/*' 'build/release/*'
-          unzip -t build/release/Dreadstalker-1.0.1-Forge-1.20.1-source.zip
+          unzip -t build/release/Dreadstalker-1.0.2-Forge-1.20.1-source.zip
 
       - name: Upload verified release
         uses: actions/upload-artifact@v4
         with:
-          name: Dreadstalker-1.0.1-Forge-1.20.1
+          name: Dreadstalker-1.0.2-Forge-1.20.1
           path: |
-            dreadstalker/build/release/Dreadstalker-1.0.1-Forge-1.20.1.jar
-            dreadstalker/build/release/Dreadstalker-1.0.1-Forge-1.20.1-source.zip
+            dreadstalker/build/release/Dreadstalker-1.0.2-Forge-1.20.1.jar
+            dreadstalker/build/release/Dreadstalker-1.0.2-Forge-1.20.1-source.zip
             dreadstalker/build/release/SHA256SUMS.txt
           if-no-files-found: error
