@@ -16,20 +16,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Reconstruct exact Voxline source
+      - name: Verify transfer and reconstruct exact source
         shell: bash
         run: |
           set -euxo pipefail
+          echo 'f54b992c792ec5a9ea7b1c9b589ce8eaeca8bb253f44e4b885aa3ea31fc9c5ae  voxline-input/ci-00.b64' | sha256sum -c -
+          echo '8186d47941d64c9eff91cf824bc0a0ef17e843522e46748cc7b21c45a3c96db2  voxline-input/ci-01.b64' | sha256sum -c -
+          echo '4d1fd1d6707ee9f85d21a35c2dc1cb29672d6b59a46244e44cf302d1f58cf16c  voxline-input/ci-02.b64' | sha256sum -c -
+          echo '46c7ed392ce966b27d7d001769ebd48029c21510680dd0a5045565f10dffbeba  voxline-input/ci-03.b64' | sha256sum -c -
+          echo '9bd3e5fade5fb60207e01e46c3683e65a68d4309b07fc1961f801d03ca715a3c  voxline-input/ci-04.b64' | sha256sum -c -
+          echo 'd8d0efd9019a29fc5a22a8714305fe53042481e4771a45b42906a2887953af70  voxline-input/ci-05a.b64' | sha256sum -c -
+          echo 'a8312a108b3b50c1cad9f05c9fd839514024a08f210f20b01ed79bdfa8940818  voxline-input/ci-05b.b64' | sha256sum -c -
           mkdir -p voxline
-          cat \
-            voxline-input/ci-00.b64 \
-            voxline-input/ci-01.b64 \
-            voxline-input/ci-02.b64 \
-            voxline-input/ci-03.b64 \
-            voxline-input/ci-04.b64 \
-            voxline-input/ci-05a.b64 \
-            voxline-input/ci-05b.b64 \
-            | base64 -d > /tmp/voxline-source.zip
+          cat voxline-input/ci-00.b64 voxline-input/ci-01.b64 voxline-input/ci-02.b64 voxline-input/ci-03.b64 voxline-input/ci-04.b64 voxline-input/ci-05a.b64 voxline-input/ci-05b.b64 | base64 -d > /tmp/voxline-source.zip
           echo '525e2c10ced86aa37665ae4d51070393bed19171916cce1c0825f28d065b3d4a  /tmp/voxline-source.zip' | sha256sum -c -
           unzip -t /tmp/voxline-source.zip
           unzip -q /tmp/voxline-source.zip -d voxline
