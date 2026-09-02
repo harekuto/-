@@ -34,6 +34,36 @@ jobs:
           chmod +x dreadstalker-build/generate_and_build.sh
           ./dreadstalker-build/generate_and_build.sh
 
+      - name: Apply verified Forge 1.20.1 API fixes
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          entity = Path('dreadstalker/src/main/java/dev/harekuto/dreadstalker/entity/DreadstalkerEntity.java')
+          s = entity.read_text(encoding='utf-8')
+          s = s.replace('import net.minecraft.server.level.ServerLevelAccessor;',
+                        'import net.minecraft.world.level.ServerLevelAccessor;')
+          s = s.replace('player -> player != null && !player.isCreative() && !player.isSpectator()',
+                        'entity -> entity instanceof Player player && !player.isCreative() && !player.isSpectator()')
+          entity.write_text(s, encoding='utf-8')
+
+          eyes = Path('dreadstalker/src/main/java/dev/harekuto/dreadstalker/client/render/DreadstalkerEyesLayer.java')
+          s = eyes.read_text(encoding='utf-8')
+          s = s.replace('import net.minecraft.client.renderer.entity.layers.RenderLayerParent;',
+                        'import net.minecraft.client.renderer.entity.RenderLayerParent;')
+          eyes.write_text(s, encoding='utf-8')
+
+          model = Path('dreadstalker/src/main/java/dev/harekuto/dreadstalker/client/model/DreadstalkerModel.java')
+          s = model.read_text(encoding='utf-8').replace('Mth.max(', 'Math.max(')
+          model.write_text(s, encoding='utf-8')
+          PY
+          grep -q 'net.minecraft.world.level.ServerLevelAccessor' dreadstalker/src/main/java/dev/harekuto/dreadstalker/entity/DreadstalkerEntity.java
+          grep -q 'net.minecraft.client.renderer.entity.RenderLayerParent' dreadstalker/src/main/java/dev/harekuto/dreadstalker/client/render/DreadstalkerEyesLayer.java
+          grep -q 'entity instanceof Player player' dreadstalker/src/main/java/dev/harekuto/dreadstalker/entity/DreadstalkerEntity.java
+          ! grep -R --fixed-string 'Mth.max(' dreadstalker/src/main/java/dev/harekuto/dreadstalker/client/model/DreadstalkerModel.java
+
       - name: Static QA
         shell: bash
         run: |
