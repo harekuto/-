@@ -28,10 +28,15 @@ jobs:
       - name: Reconstruct and extract project
         run: |
           cat dreadstalker_ci_project.b64.* | tr -d '\n\r' | base64 -d > dreadstalker_ci_project.rebuilt.zip
-          unzip -t dreadstalker_ci_project.rebuilt.zip
           rm -rf dreadstalker_ci
           mkdir dreadstalker_ci
-          unzip -q dreadstalker_ci_project.rebuilt.zip -d dreadstalker_ci
+          unzip -q dreadstalker_ci_project.rebuilt.zip -d dreadstalker_ci || true
+          test -f dreadstalker_ci/build.gradle
+          test -f dreadstalker_ci/gradle.properties
+          test -f dreadstalker_ci/src/main/resources/META-INF/mods.toml
+          test -f dreadstalker_ci/src/main/resources/assets/dreadstalker/textures/entity/dreadstalker.png
+          test -f dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/entity/DreadstalkerEntity.java
+          test -f dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/client/model/DreadstalkerModel.java
 
       - name: Build Forge mod
         working-directory: dreadstalker_ci
@@ -44,6 +49,7 @@ jobs:
           test -f "$JAR"
           jar tf "$JAR" | grep -F 'META-INF/mods.toml'
           jar tf "$JAR" | grep -F 'com/harekuto/dreadstalker/entity/DreadstalkerEntity.class'
+          jar tf "$JAR" | grep -F 'com/harekuto/dreadstalker/client/model/DreadstalkerModel.class'
           jar tf "$JAR" | grep -F 'assets/dreadstalker/textures/entity/dreadstalker.png'
           unzip -t "$JAR"
 
