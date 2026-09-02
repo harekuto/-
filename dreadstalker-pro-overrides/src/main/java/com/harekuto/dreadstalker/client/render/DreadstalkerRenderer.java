@@ -10,9 +10,13 @@ import net.minecraft.client.renderer.entity.MobRenderer;
 import net.minecraft.client.renderer.entity.layers.EyesLayer;
 import net.minecraft.resources.ResourceLocation;
 
+import java.util.Objects;
+
 public class DreadstalkerRenderer extends MobRenderer<DreadstalkerEntity, DreadstalkerModel<DreadstalkerEntity>> {
-    private static final ResourceLocation TEXTURE = new ResourceLocation(DreadstalkerMod.MODID + ":textures/entity/dreadstalker.png");
-    private static final ResourceLocation EYES_TEXTURE = new ResourceLocation(DreadstalkerMod.MODID + ":textures/entity/dreadstalker_eyes.png");
+    private static final ResourceLocation TEXTURE = Objects.requireNonNull(
+            ResourceLocation.tryBuild(DreadstalkerMod.MODID, "textures/entity/dreadstalker.png"));
+    private static final ResourceLocation EYES_TEXTURE = Objects.requireNonNull(
+            ResourceLocation.tryBuild(DreadstalkerMod.MODID, "textures/entity/dreadstalker_eyes.png"));
 
     public DreadstalkerRenderer(EntityRendererProvider.Context context) {
         super(context, new DreadstalkerModel<>(context.bakeLayer(DreadstalkerModel.LAYER)), 0.72F);

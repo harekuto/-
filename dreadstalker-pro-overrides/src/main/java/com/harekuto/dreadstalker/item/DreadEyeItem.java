@@ -35,7 +35,7 @@ public final class DreadEyeItem extends Item {
                 stalker.addEffect(new MobEffectInstance(MobEffects.GLOWING, 180, 0, false, false, true), player);
             }
             player.getCooldowns().addCooldown(this, 500);
-            level.playSound(null, player.blockPosition(), SoundEvents.SCULK_SENSOR_CLICKING, SoundSource.PLAYERS,
+            level.playSound(null, player.blockPosition(), SoundEvents.SCULK_CLICKING, SoundSource.PLAYERS,
                     0.8F, nearby.isEmpty() ? 0.62F : 0.92F);
             if (!player.getAbilities().instabuild) {
                 stack.hurtAndBreak(1, player, living -> living.broadcastBreakEvent(hand));
