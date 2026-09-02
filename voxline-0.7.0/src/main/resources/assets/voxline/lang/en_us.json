@@ -1,0 +1,10 @@
+{
+  "key.categories.voxline": "Voxline Voice",
+  "key.voxline.ptt": "Proximity Push-to-Talk",
+  "key.voxline.group_ptt": "Group Push-to-Talk",
+  "key.voxline.mute": "Mute Microphone",
+  "key.voxline.deafen": "Deafen",
+  "key.voxline.settings": "Open Voice Settings",
+  "key.voxline.groups": "Open Voice Groups",
+  "key.voxline.mixer": "Open Player Voice Mixer"
+}

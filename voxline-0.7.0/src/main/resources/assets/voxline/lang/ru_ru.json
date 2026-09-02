@@ -1,0 +1,10 @@
+{
+  "key.categories.voxline": "Voxline Voice",
+  "key.voxline.ptt": "Голос рядом (Push-to-Talk)",
+  "key.voxline.group_ptt": "Групповой голос (Push-to-Talk)",
+  "key.voxline.mute": "Выключить микрофон",
+  "key.voxline.deafen": "Заглушить звук",
+  "key.voxline.settings": "Открыть настройки голоса",
+  "key.voxline.groups": "Открыть голосовые группы",
+  "key.voxline.mixer": "Открыть микшер игроков"
+}
