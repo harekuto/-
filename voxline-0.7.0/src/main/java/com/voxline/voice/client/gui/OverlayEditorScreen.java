@@ -1,7 +1,6 @@
 package com.voxline.voice.client.gui;
 
 import com.voxline.voice.client.ClientConfig;
-import com.voxline.voice.client.ClientVoiceController;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -11,22 +10,264 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 public final class OverlayEditorScreen extends Screen {
-    private static final int VW=1000,VH=570;private static final String[] WIDGETS={"Nameplate","Mic Icon","Waveform","Speaking Glow","Volume Circle","Distance Label","Status Dot","Background Panel","Player Head"};
-    private final Screen parent;private float scale,ox,oy;private double mx,my;private int selected=8;private boolean dragHud,dragOpacity,dragScale;private double offX,offY;
-    public OverlayEditorScreen(Screen parent){super(Component.literal("Overlay & Theme Studio"));this.parent=parent;}@Override public boolean isPauseScreen(){return false;}
-    @Override public void render(GuiGraphics g,int mouseX,int mouseY,float pt){renderBackground(g);transform(mouseX,mouseY);ClientConfig c=ClientConfig.INSTANCE;UiTheme t=UiTheme.current();g.pose().pushPose();g.pose().translate(ox,oy,0);g.pose().scale(scale,scale,1);UiKit.panel(g,14,14,972,542,0xF20F1316,t.border());UiKit.panel(g,310,4,380,66,t.panel(),t.border());UiKit.centered(g,"OVERLAY & THEME STUDIO",500,24,t.text());UiKit.centered(g,"PIXEL HUD WORKSPACE",500,45,t.muted());
-        UiKit.text(g,"WIDGETS",30,92,t.accent());UiKit.panel(g,28,108,245,342,t.panel(),t.border());for(int i=0;i<WIDGETS.length;i++){int y=120+i*35;boolean on=visible(i);UiKit.panel(g,40,y,221,29,t.panel2(),i==selected?t.accent():t.border());UiKit.text(g,WIDGETS[i],52,y+10,t.text());UiKit.toggle(g,new UiKit.Rect(205,y+4,46,21),on,t);}
-        UiKit.text(g,"DRAG HUD • LIVE SCALE • SNAP TO GRID",290,92,t.accent());UiKit.panel(g,288,108,450,342,0xF2182029,t.border());drawWorld(g,290,110,446,338,t);UiKit.Rect hud=hudRect();drawPreview(g,hud,t);g.fill(hud.x()-2,hud.y()-2,hud.x()+6,hud.y(),t.accent());g.fill(hud.x()-2,hud.y()-2,hud.x(),hud.y()+6,t.accent());g.fill(hud.x()+hud.w()-6,hud.y()-2,hud.x()+hud.w()+2,hud.y(),t.accent());g.fill(hud.x()+hud.w(),hud.y()-2,hud.x()+hud.w()+2,hud.y()+6,t.accent());
-        UiKit.text(g,"WIDGET PROPERTIES",760,92,t.accent());UiKit.panel(g,758,108,212,190,t.panel(),t.border());UiKit.text(g,"Selected",775,132,t.muted());UiKit.panel(g,775,148,176,28,t.panel2(),t.border());UiKit.text(g,WIDGETS[selected],786,158,t.text());UiKit.text(g,"Visible",775,190,t.text());UiKit.toggle(g,new UiKit.Rect(895,182,56,24),visible(selected),t);UiKit.text(g,"Opacity",775,226,t.text());UiKit.slider(g,new UiKit.Rect(855,224,96,14),selected==8?c.headOpacity:1f,t.accent(),t);UiKit.text(g,"Scale",775,260,t.text());UiKit.slider(g,new UiKit.Rect(855,258,96,14),selected==8?(c.headScale-.65f)/.85f:1f,t.purple(),t);if(selected==8){UiKit.text(g,"Hat / 2nd Layer",775,284,t.text());UiKit.toggle(g,new UiKit.Rect(895,276,56,24),c.showHatLayer,t);}
-        UiKit.text(g,"HUD GEOMETRY",760,322,t.accent());UiKit.panel(g,758,338,212,112,t.panel(),t.border());UiKit.text(g,"Width  "+c.hudWidth+" px",775,360,t.text());UiKit.slider(g,new UiKit.Rect(775,376,176,14),(c.hudWidth-140f)/140f,t.accent(),t);UiKit.text(g,"Rows   "+c.maxHudSpeakers,775,404,t.text());UiKit.slider(g,new UiKit.Rect(775,420,176,14),(c.maxHudSpeakers-1f)/7f,t.green(),t);
-        UiKit.text(g,"ANCHOR PRESETS",290,466,t.accent());String[] a={"TL","TC","TR","ML","C","MR","BL","BC","BR"};for(int i=0;i<a.length;i++)UiKit.button(g,new UiKit.Rect(290+i*48,482,42,26),a[i],false,new UiKit.Rect(290+i*48,482,42,26).hit(mx,my),t);UiKit.text(g,"SNAP",728,466,t.accent());UiKit.toggle(g,new UiKit.Rect(728,480,64,28),c.snapToGrid,t);
-        UiKit.text(g,"LAYOUT PRESETS",30,466,t.accent());UiKit.button(g,new UiKit.Rect(30,482,100,26),"MINIMAL",false,new UiKit.Rect(30,482,100,26).hit(mx,my),t);UiKit.button(g,new UiKit.Rect(138,482,100,26),"BALANCED",true,new UiKit.Rect(138,482,100,26).hit(mx,my),t);UiKit.button(g,new UiKit.Rect(30,518,100,26),"COMPACT",false,new UiKit.Rect(30,518,100,26).hit(mx,my),t);UiKit.button(g,new UiKit.Rect(138,518,100,26),"FULL",false,new UiKit.Rect(138,518,100,26).hit(mx,my),t);UiKit.button(g,new UiKit.Rect(600,518,100,26),"RESET",false,new UiKit.Rect(600,518,100,26).hit(mx,my),t);UiKit.button(g,new UiKit.Rect(710,518,100,26),"BACK",false,new UiKit.Rect(710,518,100,26).hit(mx,my),t);UiKit.button(g,new UiKit.Rect(820,518,150,26),"SAVE & CLOSE",true,new UiKit.Rect(820,518,150,26).hit(mx,my),t);g.pose().popPose();}
-    private void drawWorld(GuiGraphics g,int x,int y,int w,int h,UiTheme t){g.fill(x,y,x+w,y+h,0xFF405168);g.fill(x,y+h/3,x+w,y+h,0xFF173625);for(int gx=x;gx<x+w;gx+=20)g.fill(gx,y,gx+1,y+h,0x4420D6D2);for(int gy=y;gy<y+h;gy+=20)g.fill(x,gy,x+w,gy+1,0x4420D6D2);g.fill(x+65,y+105,x+150,y+h,0xFF123421);g.fill(x+70,y+92,x+145,y+150,0xFF173E26);g.fill(x+330,y+78,x+390,y+h,0xFF193A24);g.fill(x+336,y+65,x+384,y+128,0xFF1D482B);g.fill(x+360,y+115,x+370,y+235,0xFF4A3325);}
-    private UiKit.Rect hudRect(){ClientConfig c=ClientConfig.INSTANCE;int cw=450,ch=342;int w=Math.max(145,Math.min(230,c.hudWidth));int h=104;int x=288+8+Math.round((cw-w-16)*(c.hudAnchorX/100f));int y=108+8+Math.round((ch-h-16)*(c.hudAnchorY/100f));return new UiKit.Rect(x,y,w,h);}
-    private void drawPreview(GuiGraphics g,UiKit.Rect r,UiTheme t){ClientConfig c=ClientConfig.INSTANCE;UiKit.panel(g,r.x(),r.y(),r.w(),r.h(),t.panel(),t.accent());UUID id=Minecraft.getInstance().player!=null?Minecraft.getInstance().player.getUUID():UUID.nameUUIDFromBytes("voxline-preview".getBytes(StandardCharsets.UTF_8));String name=Minecraft.getInstance().player!=null?Minecraft.getInstance().player.getName().getString():"harekuto";int tx=r.x()+12;if(c.showPlayerHead){int size=Math.max(20,Math.round(28*c.headScale));AvatarRenderer.draw(g,id,r.x()+12,r.y()+12,size,c.showHatLayer,c.headOpacity);tx=r.x()+20+size;}if(c.showStatusDot)g.fill(tx,r.y()+20,tx+6,r.y()+26,t.green());if(c.showNameplate)UiKit.text(g,name,tx+11,r.y()+17,t.text());if(c.showDistance)UiKit.text(g,"12m",r.x()+r.w()-38,r.y()+17,t.green());if(c.showMicIcon)UiKit.text(g,"MIC",r.x()+14,r.y()+57,t.green());if(c.showChannelBadge)UiKit.text(g,"TX • GROUP",r.x()+14,r.y()+75,t.purple());if(c.showWaveform)for(int i=0;i<10;i++){int bh=5+(i*7%17);g.fill(r.x()+76+i*8,r.y()+67-bh,r.x()+81+i*8,r.y()+67,i<7?t.green():t.purple());}if(c.showBackground)g.fill(r.x()+14,r.y()+r.h()-15,r.x()+r.w()-14,r.y()+r.h()-10,0xFF30383D);g.fill(r.x()+14,r.y()+r.h()-15,r.x()+Math.round((r.w()-28)*.72f),r.y()+r.h()-10,t.green());}
-    @Override public boolean mouseClicked(double x,double y,int b){transform(x,y);if(b!=0)return super.mouseClicked(x,y,b);ClientConfig c=ClientConfig.INSTANCE;for(int i=0;i<WIDGETS.length;i++){int ry=120+i*35;if(new UiKit.Rect(40,ry,221,29).hit(mx,my)){selected=i;return true;}if(new UiKit.Rect(205,ry+4,46,21).hit(mx,my)){setVisible(i,!visible(i));return true;}}if(new UiKit.Rect(895,182,56,24).hit(mx,my)){setVisible(selected,!visible(selected));return true;}if(selected==8&&new UiKit.Rect(895,276,56,24).hit(mx,my)){c.showHatLayer=!c.showHatLayer;return true;}if(selected==8&&new UiKit.Rect(855,224,96,18).hit(mx,my)){dragOpacity=true;updateDrag();return true;}if(selected==8&&new UiKit.Rect(855,258,96,18).hit(mx,my)){dragScale=true;updateDrag();return true;}if(new UiKit.Rect(775,372,176,20).hit(mx,my)){c.hudWidth=Math.max(140,Math.min(280,Math.round(140+140*((float)(mx-775)/176f))));return true;}if(new UiKit.Rect(775,416,176,22).hit(mx,my)){c.maxHudSpeakers=Math.max(1,Math.min(8,Math.round(1+7*((float)(mx-775)/176f))));return true;}UiKit.Rect hr=hudRect();if(hr.hit(mx,my)){dragHud=true;offX=mx-hr.x();offY=my-hr.y();return true;}for(int i=0;i<9;i++)if(new UiKit.Rect(290+i*48,482,42,26).hit(mx,my)){c.hudAnchorX=(i%3)*50;c.hudAnchorY=(i/3)*50;return true;}if(new UiKit.Rect(728,480,64,28).hit(mx,my)){c.snapToGrid=!c.snapToGrid;return true;}if(new UiKit.Rect(30,482,100,26).hit(mx,my)){preset("MINIMAL");return true;}if(new UiKit.Rect(138,482,100,26).hit(mx,my)){preset("BALANCED");return true;}if(new UiKit.Rect(30,518,100,26).hit(mx,my)){preset("COMPACT");return true;}if(new UiKit.Rect(138,518,100,26).hit(mx,my)){preset("FULL");return true;}if(new UiKit.Rect(600,518,100,26).hit(mx,my)){c.hudAnchorX=88;c.hudAnchorY=12;c.hudWidth=188;c.maxHudSpeakers=5;c.headScale=1;c.headOpacity=1;c.showHatLayer=true;return true;}if(new UiKit.Rect(710,518,100,26).hit(mx,my)||new UiKit.Rect(820,518,150,26).hit(mx,my)){onClose();return true;}return true;}
-    @Override public boolean mouseDragged(double x,double y,int b,double dx,double dy){transform(x,y);if(b==0&&(dragHud||dragOpacity||dragScale)){updateDrag();return true;}return super.mouseDragged(x,y,b,dx,dy);}@Override public boolean mouseReleased(double x,double y,int b){dragHud=dragOpacity=dragScale=false;return super.mouseReleased(x,y,b);}private void updateDrag(){ClientConfig c=ClientConfig.INSTANCE;if(dragOpacity)c.headOpacity=Math.max(.2f,Math.min(1f,(float)((mx-855)/96f)));if(dragScale)c.headScale=.65f+.85f*Math.max(0,Math.min(1,(float)((mx-855)/96f)));if(dragHud){int cw=450,ch=342,w=Math.max(145,Math.min(230,c.hudWidth)),h=104;int px=(int)Math.round(mx-offX),py=(int)Math.round(my-offY);int ax=Math.round(100f*(px-(288+8))/Math.max(1,cw-w-16));int ay=Math.round(100f*(py-(108+8))/Math.max(1,ch-h-16));if(c.snapToGrid){ax=Math.round(ax/5f)*5;ay=Math.round(ay/5f)*5;}c.hudAnchorX=Math.max(0,Math.min(100,ax));c.hudAnchorY=Math.max(0,Math.min(100,ay));}}
-    private void preset(String p){ClientConfig c=ClientConfig.INSTANCE;switch(p){case "MINIMAL"->{c.showPlayerHead=true;c.showNameplate=true;c.showMicIcon=true;c.showWaveform=false;c.showDistance=false;c.showChannelBadge=true;c.hudWidth=158;c.maxHudSpeakers=3;}case "COMPACT"->{c.showPlayerHead=true;c.showNameplate=true;c.showMicIcon=false;c.showWaveform=false;c.showDistance=true;c.showChannelBadge=true;c.hudWidth=168;c.maxHudSpeakers=4;}case "FULL"->{c.showPlayerHead=true;c.showNameplate=true;c.showMicIcon=true;c.showWaveform=true;c.showDistance=true;c.showChannelBadge=true;c.hudWidth=230;c.maxHudSpeakers=8;}default->{c.showPlayerHead=true;c.showNameplate=true;c.showMicIcon=true;c.showWaveform=true;c.showDistance=true;c.showChannelBadge=true;c.hudWidth=188;c.maxHudSpeakers=5;}}}
-    private boolean visible(int i){ClientConfig c=ClientConfig.INSTANCE;return switch(i){case 0->c.showNameplate;case 1->c.showMicIcon;case 2->c.showWaveform;case 3->c.showSpeakingGlow;case 4->true;case 5->c.showDistance;case 6->c.showStatusDot;case 7->c.showBackground;default->c.showPlayerHead;};}private void setVisible(int i,boolean v){ClientConfig c=ClientConfig.INSTANCE;switch(i){case 0->c.showNameplate=v;case 1->c.showMicIcon=v;case 2->c.showWaveform=v;case 3->c.showSpeakingGlow=v;case 5->c.showDistance=v;case 6->c.showStatusDot=v;case 7->c.showBackground=v;case 8->c.showPlayerHead=v;default->{}}}
-    @Override public void onClose(){ClientConfig.INSTANCE.save();Minecraft.getInstance().setScreen(parent);}private void transform(double x,double y){scale=Math.max(.25f,Math.min((width-8f)/VW,(height-8f)/VH));ox=(width-VW*scale)/2;oy=(height-VH*scale)/2;mx=(x-ox)/scale;my=(y-oy)/scale;}
+    private static final int VW = 1000, VH = 570;
+    private static final String[] WIDGETS = {"Nameplate", "Mic Icon", "Waveform", "Speaking Glow", "Volume Circle", "Distance Label", "Status Dot", "Background Panel", "Player Head"};
+    private final Screen parent;
+    private float scale, ox, oy;
+    private double mx, my;
+    private int selected;
+    private boolean dragHud, dragOpacity, dragScale;
+    private double offX, offY;
+
+    public OverlayEditorScreen(Screen parent) {
+        super(Component.literal("Overlay & Theme Studio"));
+        this.parent = parent;
+    }
+
+    @Override public boolean isPauseScreen() { return false; }
+
+    @Override
+    public void render(GuiGraphics g, int mouseX, int mouseY, float pt) {
+        renderBackground(g);
+        transform(mouseX, mouseY);
+        ClientConfig c = ClientConfig.INSTANCE;
+        UiTheme t = UiTheme.current();
+        g.pose().pushPose();
+        g.pose().translate(ox, oy, 0);
+        g.pose().scale(scale, scale, 1);
+
+        UiKit.panel(g, 14, 14, 972, 542, 0xF20F1316, t.border());
+        UiKit.panel(g, 310, 4, 380, 66, t.panel(), t.border());
+        UiKit.centered(g, "OVERLAY & THEME STUDIO", 500, 24, t.text());
+        UiKit.centered(g, "PIXEL HUD WORKSPACE", 500, 45, t.muted());
+
+        UiKit.text(g, "WIDGETS", 30, 92, t.accent());
+        UiKit.panel(g, 28, 108, 245, 342, t.panel(), t.border());
+        for (int i = 0; i < WIDGETS.length; i++) {
+            int y = 120 + i * 35;
+            boolean on = visible(i);
+            UiKit.panel(g, 40, y, 221, 29, t.panel2(), i == selected ? t.accent() : t.border());
+            UiKit.text(g, WIDGETS[i], 52, y + 10, i == selected ? t.accent() : t.text());
+            UiKit.toggle(g, new UiKit.Rect(205, y + 4, 46, 21), on, t);
+        }
+
+        UiKit.text(g, "DRAG HUD • LIVE SCALE • SNAP TO GRID", 290, 92, t.accent());
+        UiKit.panel(g, 288, 108, 450, 342, 0xF2182029, t.border());
+        drawWorld(g, 290, 110, 446, 338);
+        UiKit.Rect hud = hudRect();
+        drawPreview(g, hud, t);
+        drawSelectionCorners(g, hud, t.accent());
+
+        UiKit.text(g, "WIDGET PROPERTIES", 760, 92, t.accent());
+        UiKit.panel(g, 758, 108, 212, 190, t.panel(), t.border());
+        UiKit.text(g, "Selected", 775, 132, t.muted());
+        UiKit.panel(g, 775, 148, 176, 28, t.panel2(), t.border());
+        UiKit.text(g, WIDGETS[selected], 786, 158, t.text());
+        UiKit.text(g, "Visible", 775, 190, t.text());
+        UiKit.toggle(g, new UiKit.Rect(895, 182, 56, 24), visible(selected), t);
+        UiKit.text(g, "Opacity", 775, 226, t.text());
+        UiKit.slider(g, new UiKit.Rect(855, 224, 96, 14), c.widgetOpacity(selected), t.accent(), t);
+        UiKit.text(g, Math.round(c.widgetOpacity(selected) * 100f) + "%", 912, 210, t.muted());
+        UiKit.text(g, "Scale", 775, 260, t.text());
+        UiKit.slider(g, new UiKit.Rect(855, 258, 96, 14), (c.widgetScale(selected) - .65f) / .85f, t.purple(), t);
+        UiKit.text(g, Math.round(c.widgetScale(selected) * 100f) + "%", 912, 244, t.muted());
+        if (selected == 8) {
+            UiKit.text(g, "Hat / 2nd Layer", 775, 284, t.text());
+            UiKit.toggle(g, new UiKit.Rect(895, 276, 56, 24), c.showHatLayer, t);
+        }
+
+        UiKit.text(g, "HUD GEOMETRY", 760, 322, t.accent());
+        UiKit.panel(g, 758, 338, 212, 112, t.panel(), t.border());
+        UiKit.text(g, "Width  " + c.hudWidth + " px", 775, 360, t.text());
+        UiKit.slider(g, new UiKit.Rect(775, 376, 176, 14), (c.hudWidth - 140f) / 140f, t.accent(), t);
+        UiKit.text(g, "Rows   " + c.maxHudSpeakers, 775, 404, t.text());
+        UiKit.slider(g, new UiKit.Rect(775, 420, 176, 14), (c.maxHudSpeakers - 1f) / 7f, t.green(), t);
+
+        UiKit.text(g, "ANCHOR PRESETS", 290, 466, t.accent());
+        String[] a = {"TL", "TC", "TR", "ML", "C", "MR", "BL", "BC", "BR"};
+        for (int i = 0; i < a.length; i++) UiKit.button(g, new UiKit.Rect(290 + i * 48, 482, 42, 26), a[i], false, new UiKit.Rect(290 + i * 48, 482, 42, 26).hit(mx, my), t);
+        UiKit.text(g, "SNAP", 728, 466, t.accent());
+        UiKit.toggle(g, new UiKit.Rect(728, 480, 64, 28), c.snapToGrid, t);
+
+        UiKit.text(g, "LAYOUT PRESETS", 30, 466, t.accent());
+        UiKit.button(g, new UiKit.Rect(30, 482, 100, 26), "MINIMAL", false, new UiKit.Rect(30, 482, 100, 26).hit(mx, my), t);
+        UiKit.button(g, new UiKit.Rect(138, 482, 100, 26), "BALANCED", true, new UiKit.Rect(138, 482, 100, 26).hit(mx, my), t);
+        UiKit.button(g, new UiKit.Rect(30, 518, 100, 26), "COMPACT", false, new UiKit.Rect(30, 518, 100, 26).hit(mx, my), t);
+        UiKit.button(g, new UiKit.Rect(138, 518, 100, 26), "FULL", false, new UiKit.Rect(138, 518, 100, 26).hit(mx, my), t);
+        UiKit.button(g, new UiKit.Rect(600, 518, 100, 26), "RESET", false, new UiKit.Rect(600, 518, 100, 26).hit(mx, my), t);
+        UiKit.button(g, new UiKit.Rect(710, 518, 100, 26), "BACK", false, new UiKit.Rect(710, 518, 100, 26).hit(mx, my), t);
+        UiKit.button(g, new UiKit.Rect(820, 518, 150, 26), "SAVE & CLOSE", true, new UiKit.Rect(820, 518, 150, 26).hit(mx, my), t);
+        g.pose().popPose();
+    }
+
+    private void drawWorld(GuiGraphics g, int x, int y, int w, int h) {
+        g.fill(x, y, x + w, y + h, 0xFF405168);
+        g.fill(x, y + h / 3, x + w, y + h, 0xFF173625);
+        for (int gx = x; gx < x + w; gx += 20) g.fill(gx, y, gx + 1, y + h, 0x4420D6D2);
+        for (int gy = y; gy < y + h; gy += 20) g.fill(x, gy, x + w, gy + 1, 0x4420D6D2);
+        g.fill(x + 65, y + 105, x + 150, y + h, 0xFF123421);
+        g.fill(x + 70, y + 92, x + 145, y + 150, 0xFF173E26);
+        g.fill(x + 330, y + 78, x + 390, y + h, 0xFF193A24);
+        g.fill(x + 336, y + 65, x + 384, y + 128, 0xFF1D482B);
+        g.fill(x + 360, y + 115, x + 370, Math.min(y + h, y + 235), 0xFF4A3325);
+    }
+
+    private UiKit.Rect hudRect() {
+        ClientConfig c = ClientConfig.INSTANCE;
+        int cw = 450, ch = 342;
+        int w = Math.max(145, Math.min(230, c.hudWidth));
+        int h = 104;
+        int x = 288 + 8 + Math.round((cw - w - 16) * (c.hudAnchorX / 100f));
+        int y = 108 + 8 + Math.round((ch - h - 16) * (c.hudAnchorY / 100f));
+        return new UiKit.Rect(x, y, w, h);
+    }
+
+    private void drawPreview(GuiGraphics g, UiKit.Rect r, UiTheme t) {
+        ClientConfig c = ClientConfig.INSTANCE;
+        int inset = Math.max(-2, Math.min(4, Math.round((1f - c.backgroundScale) * 4f)));
+        if (c.showBackground) UiKit.panel(g, r.x() + inset, r.y() + inset, r.w() - inset * 2, r.h() - inset * 2, UiTheme.alpha(t.panel(), c.backgroundOpacity), t.accent());
+        else UiKit.panel(g, r.x(), r.y(), r.w(), r.h(), UiTheme.alpha(t.panel(), .18f), t.accent());
+        if (c.showSpeakingGlow) g.fill(r.x(), r.y(), r.x() + Math.max(2, Math.round(4f * c.speakingGlowScale)), r.y() + r.h(), UiTheme.alpha(t.purple(), c.speakingGlowOpacity));
+
+        UUID id = Minecraft.getInstance().player != null ? Minecraft.getInstance().player.getUUID() : UUID.nameUUIDFromBytes("voxline-preview".getBytes(StandardCharsets.UTF_8));
+        String name = Minecraft.getInstance().player != null ? Minecraft.getInstance().player.getName().getString() : "harekuto";
+        int tx = r.x() + 12;
+        if (c.showPlayerHead) {
+            int size = Math.max(20, Math.round(28f * c.headScale));
+            AvatarRenderer.draw(g, id, r.x() + 12, r.y() + 12, size, c.showHatLayer, c.headOpacity);
+            tx = r.x() + 20 + size;
+        }
+        if (c.showMicIcon) {
+            int size = Math.max(8, Math.round(10f * c.micIconScale));
+            drawMic(g, tx, r.y() + 18, size, UiTheme.alpha(t.green(), c.micIconOpacity));
+            tx += size + 5;
+        }
+        if (c.showStatusDot) {
+            int dot = Math.max(3, Math.round(6f * c.statusScale));
+            g.fill(tx, r.y() + 20, tx + dot, r.y() + 20 + dot, UiTheme.alpha(t.green(), c.statusOpacity));
+            tx += dot + 5;
+        }
+        if (c.showNameplate) scaledText(g, name, tx, r.y() + 17, UiTheme.alpha(t.text(), c.nameplateOpacity), c.nameplateScale);
+        if (c.showDistance) scaledText(g, "12m", r.x() + r.w() - 38, r.y() + 17, UiTheme.alpha(t.green(), c.distanceOpacity), c.distanceScale);
+        if (c.showChannelBadge) UiKit.text(g, "TX • GROUP", r.x() + 14, r.y() + 75, t.purple());
+        if (c.showWaveform) {
+            int bw = Math.max(3, Math.round(5f * Math.min(1.25f, c.waveformScale)));
+            int gap = Math.max(2, Math.round(3f * c.waveformScale));
+            for (int i = 0; i < 10; i++) {
+                int bh = Math.max(4, Math.round((5 + (i * 7 % 17)) * c.waveformScale));
+                int col = i < 7 ? UiTheme.alpha(t.green(), c.waveformOpacity) : UiTheme.alpha(t.purple(), c.waveformOpacity);
+                int px = r.x() + 76 + i * (bw + gap);
+                g.fill(px, r.y() + 67 - bh, px + bw, r.y() + 67, col);
+            }
+        }
+        if (c.showVolumeCircle) {
+            int size = Math.max(12, Math.round(16f * c.volumeCircleScale));
+            drawLevelRing(g, r.x() + r.w() - size - 14, r.y() + 44, size, .68f, UiTheme.alpha(t.green(), c.volumeCircleOpacity), UiTheme.alpha(0xFF3B4348, c.volumeCircleOpacity));
+        }
+        if (c.showBackground) {
+            g.fill(r.x() + 14, r.y() + r.h() - 15, r.x() + r.w() - 14, r.y() + r.h() - 10, UiTheme.alpha(0xFF30383D, c.backgroundOpacity));
+            g.fill(r.x() + 14, r.y() + r.h() - 15, r.x() + Math.round((r.w() - 28) * .72f), r.y() + r.h() - 10, UiTheme.alpha(t.green(), c.backgroundOpacity));
+        }
+    }
+
+    private void drawSelectionCorners(GuiGraphics g, UiKit.Rect hud, int color) {
+        g.fill(hud.x() - 2, hud.y() - 2, hud.x() + 6, hud.y(), color);
+        g.fill(hud.x() - 2, hud.y() - 2, hud.x(), hud.y() + 6, color);
+        g.fill(hud.x() + hud.w() - 6, hud.y() - 2, hud.x() + hud.w() + 2, hud.y(), color);
+        g.fill(hud.x() + hud.w(), hud.y() - 2, hud.x() + hud.w() + 2, hud.y() + 6, color);
+    }
+
+    @Override
+    public boolean mouseClicked(double x, double y, int b) {
+        transform(x, y);
+        if (b != 0) return super.mouseClicked(x, y, b);
+        ClientConfig c = ClientConfig.INSTANCE;
+        for (int i = 0; i < WIDGETS.length; i++) {
+            int ry = 120 + i * 35;
+            if (new UiKit.Rect(40, ry, 160, 29).hit(mx, my)) { selected = i; return true; }
+            if (new UiKit.Rect(205, ry + 4, 46, 21).hit(mx, my)) { setVisible(i, !visible(i)); return true; }
+        }
+        if (new UiKit.Rect(895, 182, 56, 24).hit(mx, my)) { setVisible(selected, !visible(selected)); return true; }
+        if (selected == 8 && new UiKit.Rect(895, 276, 56, 24).hit(mx, my)) { c.showHatLayer = !c.showHatLayer; return true; }
+        if (new UiKit.Rect(855, 220, 96, 24).hit(mx, my)) { dragOpacity = true; updateDrag(); return true; }
+        if (new UiKit.Rect(855, 254, 96, 24).hit(mx, my)) { dragScale = true; updateDrag(); return true; }
+        if (new UiKit.Rect(775, 372, 176, 20).hit(mx, my)) { c.hudWidth = Math.max(140, Math.min(280, Math.round(140 + 140 * ((float) (mx - 775) / 176f)))); return true; }
+        if (new UiKit.Rect(775, 416, 176, 22).hit(mx, my)) { c.maxHudSpeakers = Math.max(1, Math.min(8, Math.round(1 + 7 * ((float) (mx - 775) / 176f)))); return true; }
+        UiKit.Rect hr = hudRect();
+        if (hr.hit(mx, my)) { dragHud = true; offX = mx - hr.x(); offY = my - hr.y(); return true; }
+        for (int i = 0; i < 9; i++) if (new UiKit.Rect(290 + i * 48, 482, 42, 26).hit(mx, my)) { c.hudAnchorX = (i % 3) * 50; c.hudAnchorY = (i / 3) * 50; return true; }
+        if (new UiKit.Rect(728, 480, 64, 28).hit(mx, my)) { c.snapToGrid = !c.snapToGrid; return true; }
+        if (new UiKit.Rect(30, 482, 100, 26).hit(mx, my)) { preset("MINIMAL"); return true; }
+        if (new UiKit.Rect(138, 482, 100, 26).hit(mx, my)) { preset("BALANCED"); return true; }
+        if (new UiKit.Rect(30, 518, 100, 26).hit(mx, my)) { preset("COMPACT"); return true; }
+        if (new UiKit.Rect(138, 518, 100, 26).hit(mx, my)) { preset("FULL"); return true; }
+        if (new UiKit.Rect(600, 518, 100, 26).hit(mx, my)) { resetEditor(); return true; }
+        if (new UiKit.Rect(710, 518, 100, 26).hit(mx, my) || new UiKit.Rect(820, 518, 150, 26).hit(mx, my)) { onClose(); return true; }
+        return true;
+    }
+
+    @Override public boolean mouseDragged(double x, double y, int b, double dx, double dy) { transform(x, y); if (b == 0 && (dragHud || dragOpacity || dragScale)) { updateDrag(); return true; } return super.mouseDragged(x, y, b, dx, dy); }
+    @Override public boolean mouseReleased(double x, double y, int b) { dragHud = dragOpacity = dragScale = false; return super.mouseReleased(x, y, b); }
+
+    private void updateDrag() {
+        ClientConfig c = ClientConfig.INSTANCE;
+        if (dragOpacity) c.setWidgetOpacity(selected, (float) ((mx - 855) / 96f));
+        if (dragScale) c.setWidgetScale(selected, .65f + .85f * Math.max(0, Math.min(1, (float) ((mx - 855) / 96f))));
+        if (dragHud) {
+            int cw = 450, ch = 342, w = Math.max(145, Math.min(230, c.hudWidth)), h = 104;
+            int px = (int) Math.round(mx - offX), py = (int) Math.round(my - offY);
+            int ax = Math.round(100f * (px - (288 + 8)) / Math.max(1, cw - w - 16));
+            int ay = Math.round(100f * (py - (108 + 8)) / Math.max(1, ch - h - 16));
+            if (c.snapToGrid) { ax = Math.round(ax / 5f) * 5; ay = Math.round(ay / 5f) * 5; }
+            c.hudAnchorX = Math.max(0, Math.min(100, ax));
+            c.hudAnchorY = Math.max(0, Math.min(100, ay));
+        }
+    }
+
+    private void preset(String p) {
+        ClientConfig c = ClientConfig.INSTANCE;
+        switch (p) {
+            case "MINIMAL" -> { c.showPlayerHead=true;c.showNameplate=true;c.showMicIcon=true;c.showWaveform=false;c.showSpeakingGlow=true;c.showVolumeCircle=false;c.showDistance=false;c.showStatusDot=false;c.showBackground=true;c.showChannelBadge=true;c.hudWidth=158;c.maxHudSpeakers=3; }
+            case "COMPACT" -> { c.showPlayerHead=true;c.showNameplate=true;c.showMicIcon=false;c.showWaveform=false;c.showSpeakingGlow=true;c.showVolumeCircle=true;c.showDistance=true;c.showStatusDot=true;c.showBackground=true;c.showChannelBadge=true;c.hudWidth=168;c.maxHudSpeakers=4; }
+            case "FULL" -> { c.showPlayerHead=true;c.showNameplate=true;c.showMicIcon=true;c.showWaveform=true;c.showSpeakingGlow=true;c.showVolumeCircle=true;c.showDistance=true;c.showStatusDot=true;c.showBackground=true;c.showChannelBadge=true;c.hudWidth=230;c.maxHudSpeakers=8; }
+            default -> { c.showPlayerHead=true;c.showNameplate=true;c.showMicIcon=true;c.showWaveform=true;c.showSpeakingGlow=true;c.showVolumeCircle=true;c.showDistance=true;c.showStatusDot=true;c.showBackground=true;c.showChannelBadge=true;c.hudWidth=188;c.maxHudSpeakers=5; }
+        }
+    }
+
+    private void resetEditor() {
+        ClientConfig c = ClientConfig.INSTANCE;
+        c.hudAnchorX = 88; c.hudAnchorY = 12; c.hudWidth = 188; c.maxHudSpeakers = 5; c.showHatLayer = true;
+        c.resetWidgetStyle();
+        preset("BALANCED");
+    }
+
+    private boolean visible(int i) {
+        ClientConfig c = ClientConfig.INSTANCE;
+        return switch (i) {
+            case 0 -> c.showNameplate; case 1 -> c.showMicIcon; case 2 -> c.showWaveform; case 3 -> c.showSpeakingGlow; case 4 -> c.showVolumeCircle;
+            case 5 -> c.showDistance; case 6 -> c.showStatusDot; case 7 -> c.showBackground; default -> c.showPlayerHead;
+        };
+    }
+
+    private void setVisible(int i, boolean v) {
+        ClientConfig c = ClientConfig.INSTANCE;
+        switch (i) {
+            case 0 -> c.showNameplate=v; case 1 -> c.showMicIcon=v; case 2 -> c.showWaveform=v; case 3 -> c.showSpeakingGlow=v; case 4 -> c.showVolumeCircle=v;
+            case 5 -> c.showDistance=v; case 6 -> c.showStatusDot=v; case 7 -> c.showBackground=v; case 8 -> c.showPlayerHead=v; default -> { }
+        }
+    }
+
+    private static void scaledText(GuiGraphics g, String text, int x, int y, int color, float scale) {
+        float s = Math.max(.65f, Math.min(1.5f, scale));
+        g.pose().pushPose();g.pose().translate(x,y,0);g.pose().scale(s,s,1f);UiKit.text(g,text,0,0,color);g.pose().popPose();
+    }
+
+    private static void drawMic(GuiGraphics g, int x, int y, int size, int color) {
+        int w=Math.max(3,size/2),cx=x+size/2,top=y+1,bottom=y+Math.max(4,size-4);g.fill(cx-w/2,top,cx+(w+1)/2,bottom,color);g.fill(cx-w/2-2,bottom-2,cx-w/2,bottom+1,color);g.fill(cx+(w+1)/2,bottom-2,cx+(w+1)/2+2,bottom+1,color);g.fill(cx-1,bottom+1,cx+1,y+size-1,color);g.fill(cx-3,y+size-2,cx+3,y+size,color);
+    }
+
+    private static void drawLevelRing(GuiGraphics g,int x,int y,int size,float level,int active,int inactive){int seg=Math.max(2,size/5),max=Math.max(0,Math.min(8,Math.round(level*8f)));int[][] p={{2,0},{5,0},{7,2},{7,5},{5,7},{2,7},{0,5},{0,2}};int unit=Math.max(1,(size-seg)/7);for(int i=0;i<p.length;i++){int px=x+p[i][0]*unit,py=y+p[i][1]*unit;g.fill(px,py,px+seg,py+seg,i<max?active:inactive);}}
+
+    @Override public void onClose() { ClientConfig.INSTANCE.save(); Minecraft.getInstance().setScreen(parent); }
+    private void transform(double x,double y){scale=Math.max(.25f,Math.min((width-8f)/VW,(height-8f)/VH));ox=(width-VW*scale)/2;oy=(height-VH*scale)/2;mx=(x-ox)/scale;my=(y-oy)/scale;}
 }
