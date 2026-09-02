@@ -1,5 +1,6 @@
 package net.execheinz.upgrader.client.screen;
 
+import com.mojang.math.Axis;
 import java.util.HashMap;
 import java.util.Map;
 import net.execheinz.upgrader.registry.ModItems;
@@ -31,9 +32,17 @@ public final class CaseArt {
     }
 
     public static void render3d(GuiGraphics g, String category, int x, int y, float scale) {
+        render3dAnimated(g, category, x, y, scale, 0F, 0F);
+    }
+
+    public static void render3dAnimated(GuiGraphics g, String category, int x, int y, float scale, float angleDeg, float bob) {
         g.pose().pushPose();
-        g.pose().translate(x, y, 100.0F);
+        float cx = x + 8F * scale;
+        float cy = y + 8F * scale + bob;
+        g.pose().translate(cx, cy, 120.0F);
+        g.pose().mulPose(Axis.ZP.rotationDegrees(angleDeg));
         g.pose().scale(scale, scale, 1.0F);
+        g.pose().translate(-8F, -8F, 0F);
         g.renderItem(stack(category), 0, 0);
         g.pose().popPose();
     }
