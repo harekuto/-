@@ -21,18 +21,32 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf /tmp/musor-premium.zip musor-drop
-          cat build-input/premium440/part-*.b64 | base64 -d > /tmp/musor-premium.zip
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, re
+          parts=sorted(Path('build-input/premium440').glob('part-*.b64'))
+          assert parts, 'premium archive parts missing'
+          raw=''.join(p.read_text(encoding='utf-8', errors='ignore') for p in parts)
+          clean=''.join(re.findall(r'[A-Za-z0-9+/=]', raw))
+          # Strip premature padding inserted by a malformed chunk, then pad only at the end.
+          clean=clean.replace('=','')
+          clean += '=' * ((4-len(clean)%4)%4)
+          data=base64.b64decode(clean, validate=False)
+          Path('/tmp/musor-premium.zip').write_bytes(data)
+          print('PREMIUM_PARTS',len(parts),'RAW_CHARS',len(raw),'CLEAN_CHARS',len(clean),'ZIP_BYTES',len(data))
+          PY
           unzip -tq /tmp/musor-premium.zip
           mkdir -p musor-drop
           unzip -q /tmp/musor-premium.zip -d musor-drop
-          # Some source archives contain a single top-level directory. Normalize it.
           if [ ! -f musor-drop/build.gradle ]; then
-            ROOT="$(find musor-drop -mindepth 1 -maxdepth 2 -type f -name build.gradle -printf '%h\n' | head -n1)"
+            ROOT="$(find musor-drop -mindepth 1 -maxdepth 3 -type f -name build.gradle -printf '%h\n' | head -n1)"
             test -n "$ROOT"
-            cp -a "$ROOT"/. musor-drop/.normalized
-            rm -rf musor-drop/*
-            cp -a musor-drop/.normalized/. musor-drop/
-            rm -rf musor-drop/.normalized
+            TMP="$(mktemp -d)"
+            cp -a "$ROOT"/. "$TMP"/
+            rm -rf musor-drop
+            mkdir musor-drop
+            cp -a "$TMP"/. musor-drop/
+            rm -rf "$TMP"
           fi
           test -f musor-drop/build.gradle
           test -f musor-drop/gradle.properties
