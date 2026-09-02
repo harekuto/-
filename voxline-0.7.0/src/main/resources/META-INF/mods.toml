@@ -1,0 +1,28 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="voxline"
+version="${file.jarVersion}"
+displayName="Voxline Voice"
+authors="Voxline"
+description='''
+Premium proximity and group voice chat for Forge 1.20.1 with Opus audio,
+comfortable microphone processing, distance-independent group channels,
+player mixer, two-layer skin portraits, and a customizable Studio HUD.
+'''
+
+[[dependencies.voxline]]
+modId="forge"
+mandatory=true
+versionRange="[47.4.10,48)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.voxline]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.20.2)"
+ordering="NONE"
+side="BOTH"
