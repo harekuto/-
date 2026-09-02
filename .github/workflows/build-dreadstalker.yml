@@ -1,0 +1,116 @@
+name: Build Dreadstalker Forge 1.20.1
+
+on:
+  push:
+    branches:
+      - 'build/dreadstalker-forge-1.20.1-v1.0.0'
+    paths:
+      - 'dreadstalker-build/**'
+      - '.github/workflows/build-dreadstalker.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.8
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Generate source and original horror assets
+        shell: bash
+        run: |
+          set -euxo pipefail
+          chmod +x dreadstalker-build/generate_and_build.sh
+          ./dreadstalker-build/generate_and_build.sh
+
+      - name: Static QA
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f dreadstalker/src/main/resources/assets/dreadstalker/textures/entity/dreadstalker.png
+          test -f dreadstalker/src/main/resources/assets/dreadstalker/textures/entity/dreadstalker_eyes.png
+          test -f dreadstalker/src/main/resources/assets/dreadstalker/textures/gui/jumpscare.png
+          test "$(find dreadstalker/src/main/resources/assets/dreadstalker/sounds -name '*.ogg' | wc -l)" -eq 7
+          test "$(find dreadstalker/src/main/java -name '*.java' | wc -l)" -ge 12
+          ! grep -R --line-number -E 'TODO|FIXME|System\.out\.|catch \(Throwable' dreadstalker/src/main/java
+          python3 -m json.tool dreadstalker/src/main/resources/assets/dreadstalker/lang/en_us.json >/dev/null
+          python3 -m json.tool dreadstalker/src/main/resources/assets/dreadstalker/lang/ru_ru.json >/dev/null
+          python3 -m json.tool dreadstalker/src/main/resources/assets/dreadstalker/sounds.json >/dev/null
+          python3 -m json.tool dreadstalker/src/main/resources/data/dreadstalker/forge/biome_modifier/add_dreadstalker.json >/dev/null
+          python3 -m json.tool dreadstalker/src/main/resources/data/dreadstalker/loot_tables/entities/dreadstalker.json >/dev/null
+
+      - name: Clean Forge build
+        working-directory: dreadstalker
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle --no-daemon clean build --stacktrace
+
+      - name: Verify production JAR
+        working-directory: dreadstalker
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p build/release
+          JAR="$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -n1)"
+          test -n "$JAR"
+          unzip -t "$JAR"
+          unzip -p "$JAR" META-INF/mods.toml | grep -q 'modId="dreadstalker"'
+          unzip -l "$JAR" | grep -q 'dev/harekuto/dreadstalker/entity/DreadstalkerEntity.class'
+          unzip -l "$JAR" | grep -q 'dev/harekuto/dreadstalker/client/model/DreadstalkerModel.class'
+          unzip -l "$JAR" | grep -q 'assets/dreadstalker/textures/gui/jumpscare.png'
+          unzip -l "$JAR" | grep -q 'assets/dreadstalker/sounds/jumpscare.ogg'
+          cp "$JAR" build/release/Dreadstalker-1.0.0-Forge-1.20.1.jar
+          sha256sum build/release/Dreadstalker-1.0.0-Forge-1.20.1.jar | tee build/release/SHA256SUMS.txt
+
+      - name: Dedicated-server smoke test
+        working-directory: dreadstalker
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p run
+          printf 'eula=true\n' > run/eula.txt
+          timeout 120s gradle --no-daemon runServer > /tmp/dreadstalker-server.log 2>&1
+          CODE=$?
+          cat /tmp/dreadstalker-server.log
+          if grep -Eqi 'Mod loading has failed|Failed to load|NoClassDefFoundError|ClassNotFoundException|Exception in thread "main"' /tmp/dreadstalker-server.log; then
+            exit 1
+          fi
+          if ! grep -q 'Dreadstalker' /tmp/dreadstalker-server.log && ! grep -q 'dreadstalker' /tmp/dreadstalker-server.log; then
+            echo 'Dreadstalker was not observed in server log.' >&2
+            exit 1
+          fi
+          if [ "$CODE" -ne 0 ] && [ "$CODE" -ne 124 ]; then
+            exit "$CODE"
+          fi
+
+      - name: Package source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf dreadstalker/run dreadstalker/run-client dreadstalker/.gradle
+          cd dreadstalker
+          zip -qr build/release/Dreadstalker-1.0.0-Forge-1.20.1-source.zip . \
+            -x 'build/classes/*' 'build/generated/*' 'build/resources/*' 'build/tmp/*' 'build/libs/*' 'build/release/*'
+          unzip -t build/release/Dreadstalker-1.0.0-Forge-1.20.1-source.zip
+
+      - name: Upload verified release
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dreadstalker-1.0.0-Forge-1.20.1
+          path: |
+            dreadstalker/build/release/Dreadstalker-1.0.0-Forge-1.20.1.jar
+            dreadstalker/build/release/Dreadstalker-1.0.0-Forge-1.20.1-source.zip
+            dreadstalker/build/release/SHA256SUMS.txt
+          if-no-files-found: error
