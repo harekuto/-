@@ -1,0 +1,205 @@
+name: Build Musor Drop 4.6.0 Premium Support
+
+on:
+  push:
+    branches: [ musor-4.6.0-premium-support ]
+    paths:
+      - 'build-input/stability/**'
+      - 'build-input/unified-src/**'
+      - '.github/workflows/build-musor-drop-460.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct verified stable core and premium UI
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git fetch origin main --depth=1
+          rm -rf /tmp/base-input /tmp/musor-base.zip /tmp/musor-stability.zip musor-drop
+          mkdir -p /tmp/base-input musor-drop
+          git archive --format=tar origin/main build-input | tar -xf - -C /tmp/base-input
+          cat /tmp/base-input/build-input/part-*.b64 | base64 -d > /tmp/musor-base.zip
+          unzip -tq /tmp/musor-base.zip
+          unzip -q /tmp/musor-base.zip -d musor-drop
+
+          MAIN='musor-drop/src/main/java/net/execheinz/upgrader/Upgrader.java'
+          ITEMS='musor-drop/src/main/java/net/execheinz/upgrader/registry/ModItems.java'
+          MENUS='musor-drop/src/main/java/net/execheinz/upgrader/registry/ModMenus.java'
+          ITEM='musor-drop/src/main/java/net/execheinz/upgrader/item/UpgraderItem.java'
+          SCREEN='musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java'
+
+          sed -i 's/public static final String MODID = "upgrader";/public static final String MODID = "musordrop";/' "$MAIN" || true
+          sed -i 's/ITEMS.register("upgrader",/ITEMS.register("station",/' "$ITEMS" || true
+          sed -i 's/MENUS.register("upgrader",/MENUS.register("station",/' "$MENUS" || true
+          sed -i 's/"menu.upgrader.title"/"menu.musordrop.title"/' "$ITEM" || true
+          sed -i 's/renderTooltip(g, mouseX, mouseY);/renderCaseTooltip(g, mouseX, mouseY);/' "$SCREEN" || true
+          sed -i 's/private void renderTooltip(GuiGraphics g, int mouseX, int mouseY)/private void renderCaseTooltip(GuiGraphics g, int mouseX, int mouseY)/' "$SCREEN" || true
+
+          if [ -d musor-drop/src/main/resources/assets/upgrader ]; then mv musor-drop/src/main/resources/assets/upgrader musor-drop/src/main/resources/assets/musordrop; fi
+          if [ -d musor-drop/src/main/resources/data/upgrader ]; then mv musor-drop/src/main/resources/data/upgrader musor-drop/src/main/resources/data/musordrop; fi
+          if [ -f musor-drop/src/main/resources/assets/musordrop/models/item/upgrader.json ]; then mv musor-drop/src/main/resources/assets/musordrop/models/item/upgrader.json musor-drop/src/main/resources/assets/musordrop/models/item/station.json; fi
+          if [ -f musor-drop/src/main/resources/data/musordrop/recipes/upgrader.json ]; then mv musor-drop/src/main/resources/data/musordrop/recipes/upgrader.json musor-drop/src/main/resources/data/musordrop/recipes/station.json; fi
+          find musor-drop/src/main/resources -type f \( -name '*.json' -o -name '*.mcmeta' \) -print0 | xargs -0 -r sed -i \
+            -e 's/upgrader:/musordrop:/g' \
+            -e 's/item\.upgrader\.upgrader/item.musordrop.station/g' \
+            -e 's/menu\.upgrader\.title/menu.musordrop.title/g' \
+            -e 's/gui\.upgrader\./gui.musordrop./g' \
+            -e 's/musordrop:upgrader/musordrop:station/g'
+
+          cat build-input/stability/part-*.b64 | base64 -d > /tmp/musor-stability.zip
+          unzip -tq /tmp/musor-stability.zip
+          unzip -qo /tmp/musor-stability.zip -d musor-drop
+
+          cp -a build-input/unified-src/src/. musor-drop/src/
+          python3 build-input/unified-src/generate_visual_assets.py
+          python3 build-input/unified-src/apply_support_page.py musor-drop
+          sed -i 's/^mod_version=.*/mod_version=4.6.0/' musor-drop/gradle.properties
+          sed -i 's|^mod_description=.*|mod_description=Musor Drop 4.6 Premium: verified server-authoritative economy, polished purple Minecraft-style interface, 224 cases, bundled 3D cases, safe upgrading and selling, plus trusted Boosty, DonationAlerts and Discord support links.|' musor-drop/gradle.properties
+
+          test -f musor-drop/build.gradle
+          grep -q '^minecraft_version=1.20.1$' musor-drop/gradle.properties
+          grep -q '^forge_version=47.4.10$' musor-drop/gradle.properties
+          grep -q '^mod_id=musordrop$' musor-drop/gradle.properties
+          grep -q '^mod_version=4.6.0$' musor-drop/gradle.properties
+          grep -q 'MODID = "musordrop"' "$MAIN"
+          grep -q 'ITEMS.register("station"' "$ITEMS"
+          grep -q 'ITEMS.register("case_display"' "$ITEMS"
+          grep -q 'MENUS.register("station"' "$MENUS"
+          grep -q 'SupportLinks.BOOSTY' "$SCREEN"
+          grep -q 'SupportLinks.DONATION_ALERTS' "$SCREEN"
+          grep -q 'SupportLinks.DISCORD' "$SCREEN"
+          grep -q 'https://boosty.to/harekuto/donate' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/SupportLinks.java
+          grep -q 'https://www.donationalerts.com/r/harekuto' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/SupportLinks.java
+          grep -q 'https://discord.gg/micro' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/SupportLinks.java
+          test -f musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java
+          test -f musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
+          test -f musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorButton.java
+          test -f musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseArt.java
+          test "$(find musor-drop/src/main/resources/assets/musordrop/models/item/case_models -name '*.json' | wc -l)" -eq 29
+          test "$(find musor-drop/src/main/resources/assets/musordrop/textures/item/cases -name '*.png' | wc -l)" -eq 29
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.8
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Static source and resource audit
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ! grep -R --line-number --fixed-string 'catch (Throwable' musor-drop/src/main/java
+          ! grep -R --line-number -E 'm_[0-9]{3,}_' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'System.out.' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'Runtime.exec' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'ProcessBuilder' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'Minecraft.getInstance().setScreen' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'CasesScreen' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'CasesOverlay' musor-drop/src/main/java
+          grep -q 'PROTOCOL = "5"' musor-drop/src/main/java/net/execheinz/upgrader/network/ModNetwork.java
+          grep -q '12_000' musor-drop/src/test/java/net/execheinz/upgrader/economy/CoreStabilityStressTest.java
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('musor-drop/src/main/resources')
+          jc=pc=0
+          for p in root.rglob('*.json'):
+              json.loads(p.read_text(encoding='utf-8')); jc+=1
+          for p in root.rglob('*.png'):
+              data=p.read_bytes(); assert data[:8] == b'\x89PNG\r\n\x1a\n', p; pc+=1
+          print('RESOURCE_AUDIT_OK JSON',jc,'PNG',pc)
+          PY
+
+      - name: Clean tests and Forge production build
+        working-directory: musor-drop
+        shell: bash
+        run: gradle --no-daemon clean test build --stacktrace
+
+      - name: Require 12000 plus JUnit tests
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          files=list(Path('musor-drop/build/test-results/test').glob('TEST-*.xml')); assert files
+          tests=failures=errors=skipped=0
+          for f in files:
+              root=ET.parse(f).getroot(); tests+=int(root.attrib.get('tests',0)); failures+=int(root.attrib.get('failures',0)); errors+=int(root.attrib.get('errors',0)); skipped+=int(root.attrib.get('skipped',0))
+          print('JUNIT_TOTAL',tests,'FAILURES',failures,'ERRORS',errors,'SKIPPED',skipped)
+          assert tests >= 12000 and failures == 0 and errors == 0
+          Path('musor-drop/build/test-count.txt').write_text(f'JUnit tests: {tests}\nFailures: {failures}\nErrors: {errors}\nSkipped: {skipped}\n')
+          PY
+
+      - name: Production JAR audit
+        working-directory: musor-drop
+        shell: bash
+        run: |
+          set -euxo pipefail
+          JAR="$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -n1)"
+          FINAL='build/libs/Musor-Drop-4.6.0-Forge-1.20.1-Premium-Support.jar'
+          test -n "$JAR"
+          cp "$JAR" "$FINAL"
+          unzip -t "$FINAL"
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'modId="musordrop"'
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'displayName="Musor Drop"'
+          python3 - <<'PY'
+          import json,re,struct,zipfile
+          from pathlib import Path
+          jar=Path('build/libs/Musor-Drop-4.6.0-Forge-1.20.1-Premium-Support.jar')
+          bad=[]; classes=jsons=pngs=case_models=case_textures=0
+          secret=re.compile(rb'(sk-[A-Za-z0-9_-]{20,}|discord(?:app)?\.com/api/webhooks|BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY|api[_-]?key\s*[=:])',re.I)
+          with zipfile.ZipFile(jar) as z:
+              names=set(z.namelist())
+              for n in z.namelist():
+                  d=z.read(n)
+                  if n.endswith('.class'):
+                      classes+=1
+                      if d[:4]!=b'\xca\xfe\xba\xbe' or struct.unpack('>H',d[6:8])[0]!=61: bad.append((n,'class'))
+                  elif n.endswith('.json'):
+                      json.loads(d.decode('utf-8')); jsons+=1
+                  elif n.endswith('.png'):
+                      pngs+=1
+                      if d[:8]!=b'\x89PNG\r\n\x1a\n': bad.append((n,'png'))
+                  if '/models/item/case_models/' in n and n.endswith('.json'): case_models+=1
+                  if '/textures/item/cases/' in n and n.endswith('.png'): case_textures+=1
+                  if secret.search(d): bad.append((n,'secret'))
+              required={
+                  'assets/musordrop/models/item/station.json',
+                  'assets/musordrop/models/item/case_display.json',
+                  'assets/musordrop/textures/item/station.png',
+                  'data/musordrop/recipes/station.json',
+                  'net/execheinz/upgrader/client/screen/SupportLinks.class'
+              }
+              for r in required:
+                  if r not in names: bad.append((r,'missing'))
+              junk=re.compile(r'(^|/)(src|stubs|test-classes|\.gradle|logs|crash-reports|__pycache__|\.env)(/|$)')
+              for n in names:
+                  if junk.search(n): bad.append((n,'junk'))
+          print('CLASSES',classes,'JSON',jsons,'PNG',pngs,'CASE_MODELS',case_models,'CASE_TEXTURES',case_textures,'BAD',bad)
+          assert classes >= 35 and case_models == 29 and case_textures == 29 and not bad
+          PY
+          sha256sum "$FINAL" | tee build/libs/SHA256SUMS.txt
+
+      - name: Upload production artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Musor-Drop-4.6.0-Forge-1.20.1-Premium-Support
+          path: |
+            musor-drop/build/libs/Musor-Drop-4.6.0-Forge-1.20.1-Premium-Support.jar
+            musor-drop/build/libs/SHA256SUMS.txt
+            musor-drop/build/test-count.txt
+          if-no-files-found: error
