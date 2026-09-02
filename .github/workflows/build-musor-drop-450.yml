@@ -21,20 +21,11 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf /tmp/musor-premium.zip musor-drop
-          python3 - <<'PY'
-          from pathlib import Path
-          import base64, re
-          parts=sorted(Path('build-input/premium440').glob('part-*.b64'))
-          assert parts, 'premium archive parts missing'
-          raw=''.join(p.read_text(encoding='utf-8', errors='ignore') for p in parts)
-          clean=''.join(re.findall(r'[A-Za-z0-9+/=]', raw))
-          # Strip premature padding inserted by a malformed chunk, then pad only at the end.
-          clean=clean.replace('=','')
-          clean += '=' * ((4-len(clean)%4)%4)
-          data=base64.b64decode(clean, validate=False)
-          Path('/tmp/musor-premium.zip').write_bytes(data)
-          print('PREMIUM_PARTS',len(parts),'RAW_CHARS',len(raw),'CLEAN_CHARS',len(clean),'ZIP_BYTES',len(data))
-          PY
+          : > /tmp/musor-premium.zip
+          for p in $(find build-input/premium440 -maxdepth 1 -type f -name 'part-*.b64' | sort); do
+            base64 -d "$p" >> /tmp/musor-premium.zip
+          done
+          ls -lh /tmp/musor-premium.zip
           unzip -tq /tmp/musor-premium.zip
           mkdir -p musor-drop
           unzip -q /tmp/musor-premium.zip -d musor-drop
