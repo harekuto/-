@@ -34,13 +34,9 @@ public final class VoiceRelay {
         }
 
         if (ServerConfig.INSTANCE.groupsEnabled && (packet.channel() == VoiceChannel.GROUP || packet.channel() == VoiceChannel.BOTH)) {
-            for (UUID id : GroupManager.membersOf(sender.getUUID())) {
-                if (!id.equals(sender.getUUID())) recipients.put(id, VoiceChannel.GROUP);
-            }
+            GroupManager.addGroupRecipients(sender.getUUID(), recipients);
         }
 
-        // Immutable channel-specific packets are reused for all recipients instead of allocating
-        // a new VoiceS2CPacket for every listener on every 20 ms frame.
         VoiceS2CPacket proximityPacket = null;
         VoiceS2CPacket groupPacket = null;
         for (Map.Entry<UUID, VoiceChannel> e : recipients.entrySet()) {
