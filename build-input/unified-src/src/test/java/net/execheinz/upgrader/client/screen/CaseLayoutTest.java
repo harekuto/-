@@ -10,7 +10,7 @@ final class CaseLayoutTest {
             CaseLayout.Rect a = CaseLayout.card(i);
             assertTrue(a.x() >= 0 && a.y() >= 0);
             assertTrue(a.x() + a.w() <= CaseLayout.GUI_W);
-            assertTrue(a.y() + a.h() <= 161, "Card must stay above navigation row");
+            assertTrue(a.y() + a.h() <= 140, "Card must stay above compact navigation row");
             for (int j = i + 1; j < 8; j++) {
                 assertFalse(a.overlaps(CaseLayout.card(j)), "Cards overlap: " + i + " and " + j);
             }
@@ -33,18 +33,19 @@ final class CaseLayoutTest {
         }
         assertFalse(CaseLayout.prevButton().overlaps(CaseLayout.categoryButton()));
         assertFalse(CaseLayout.categoryButton().overlaps(CaseLayout.nextButton()));
+        assertFalse(CaseLayout.nextButton().overlaps(CaseLayout.selectedPanel()));
         assertFalse(CaseLayout.selectedPanel().overlaps(CaseLayout.openButton()));
     }
 
     @Test
     void exactGridGeometryIsStable() {
-        assertEquals(384, CaseLayout.GUI_W);
-        assertEquals(284, CaseLayout.GUI_H);
-        assertEquals(14, CaseLayout.card(0).x());
+        assertEquals(348, CaseLayout.GUI_W);
+        assertEquals(248, CaseLayout.GUI_H);
+        assertEquals(12, CaseLayout.card(0).x());
         assertEquals(58, CaseLayout.card(0).y());
-        assertEquals(284, CaseLayout.card(3).x());
-        assertEquals(112, CaseLayout.card(4).y());
-        assertEquals(368, CaseLayout.card(7).x() + CaseLayout.card(7).w());
-        assertEquals(160, CaseLayout.card(7).y() + CaseLayout.card(7).h());
+        assertEquals(264, CaseLayout.card(3).x());
+        assertEquals(101, CaseLayout.card(4).y());
+        assertEquals(342, CaseLayout.card(7).x() + CaseLayout.card(7).w());
+        assertEquals(139, CaseLayout.card(7).y() + CaseLayout.card(7).h());
     }
 }
