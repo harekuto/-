@@ -23,4 +23,19 @@ final class StationLayoutTest {
         assertTrue(StationLayout.INPUT_Y >= StationLayout.INVENTORY_Y);
         assertTrue(StationLayout.INPUT_Y + 19 <= StationLayout.GUI_H);
     }
+
+    @Test
+    void scaleFourFitsCommon1440By1024Viewport() {
+        assertTrue(StationLayout.GUI_W * 4 <= 1440);
+        assertTrue(StationLayout.GUI_H * 4 <= 1024);
+    }
+
+    @Test
+    void inventoryRowsHaveAStableGapBeforeHotbar() {
+        int lastInventorySlotY = StationLayout.INVENTORY_Y + 2 * 18;
+        int lastInventoryVisualBottom = lastInventorySlotY + 19;
+        int hotbarVisualTop = StationLayout.HOTBAR_Y - 1;
+        assertTrue(lastInventoryVisualBottom <= hotbarVisualTop + 1,
+            "Slot bevels must meet cleanly without a multi-pixel overlap");
+    }
 }
