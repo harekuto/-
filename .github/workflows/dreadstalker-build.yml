@@ -3,7 +3,7 @@ name: Dreadstalker Forge Build
 on:
   push:
     branches:
-      - 'dreadstalker-ci-*'
+      - 'dreadstalker-*'
   workflow_dispatch:
 
 jobs:
@@ -38,7 +38,20 @@ jobs:
           test -f dreadstalker_ci/src/main/resources/assets/dreadstalker/textures/entity/dreadstalker.png
           test -f dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/entity/DreadstalkerEntity.java
           test -f dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/client/model/DreadstalkerModel.java
-          grep -F 'ModEntities.DREADSTALKER.get()' dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/registry/ModItems.java
+
+      - name: Inspect baseline sources
+        working-directory: dreadstalker_ci
+        run: |
+          echo '===== FILE TREE ====='
+          find src -type f | sort
+          for f in build.gradle settings.gradle gradle.properties README.md src/main/resources/META-INF/mods.toml src/main/resources/pack.mcmeta src/main/resources/assets/dreadstalker/lang/en_us.json src/main/resources/assets/dreadstalker/lang/ru_ru.json src/main/resources/data/dreadstalker/forge/biome_modifier/spawn_dreadstalker.json $(find src/main/java -type f -name '*.java' | sort); do
+            if [ -f "$f" ]; then
+              echo
+              echo "===== BEGIN $f ====="
+              cat "$f"
+              echo "===== END $f ====="
+            fi
+          done
 
       - name: Build Forge mod
         working-directory: dreadstalker_ci
@@ -58,6 +71,6 @@ jobs:
       - name: Upload release jar
         uses: actions/upload-artifact@v4
         with:
-          name: dreadstalker-forge-1.20.1-1.1.0
+          name: dreadstalker-forge-1.20.1-baseline-inspect
           path: dreadstalker_ci/build/libs/dreadstalker-1.1.0.jar
           if-no-files-found: error
