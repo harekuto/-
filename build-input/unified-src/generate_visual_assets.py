@@ -80,42 +80,31 @@ def make_case_tex(v, idx):
     hi = rgba(v, 1.20)
     glow = (241, 221, 255, 255)
     gold = (231, 190, 106, 255)
-
     for y in range(4, 14):
         for x in range(2, 14):
             checker = ((x + y + idx) & 3) == 0
             put(x, y, mid if x < 8 else shade)
             if checker and 3 < x < 13 and 5 < y < 13:
                 put(x, y, rgba(v, .62))
-
     for y in range(1, 5):
         for x in range(3, 13):
             put(x, y, light if y < 3 else mid)
     for x in range(2, 14):
-        put(x, 4, dark)
-        put(x, 13, dark)
+        put(x, 4, dark); put(x, 13, dark)
     for y in range(4, 14):
-        put(2, y, dark)
-        put(13, y, dark)
+        put(2, y, dark); put(13, y, dark)
     for x in range(4, 12):
         put(x, 2, hi if ((x + idx) & 1) == 0 else light)
-
     for y in range(7, 12):
-        put(7, y, gold)
-        put(8, y, glow if y in (8, 9) else gold)
+        put(7, y, gold); put(8, y, glow if y in (8, 9) else gold)
     for y in range(5, 13):
-        put(4, y, dark)
-        put(11, y, dark)
-
+        put(4, y, dark); put(11, y, dark)
     rune = (idx * 0x45D9 + 0x1D3) & 0x1FF
     for bit in range(9):
         if (rune >> bit) & 1:
             put(5 + (bit % 3), 7 + (bit // 3), glow)
-
-    gemx = 10 + (idx & 1)
-    gemy = 6 + ((idx >> 1) & 1)
-    put(gemx, gemy, hi)
-    put(gemx + 1, gemy, glow)
+    gemx = 10 + (idx & 1); gemy = 6 + ((idx >> 1) & 1)
+    put(gemx, gemy, hi); put(gemx + 1, gemy, glow)
     return p
 
 
@@ -125,12 +114,9 @@ for i, cat in enumerate(CATEGORIES):
 metal = []
 for y in range(16):
     for x in range(16):
-        if x in (0, 15) or y in (0, 15):
-            metal.append((225, 169, 255, 255))
-        elif ((x + y) & 3) == 0:
-            metal.append((111, 71, 130, 255))
-        else:
-            metal.append((68 + y, 39 + y, 82 + y, 255))
+        if x in (0, 15) or y in (0, 15): metal.append((225, 169, 255, 255))
+        elif ((x + y) & 3) == 0: metal.append((111, 71, 130, 255))
+        else: metal.append((68 + y, 39 + y, 82 + y, 255))
 png(TEX / 'metal.png', 16, 16, metal)
 
 
@@ -162,43 +148,44 @@ base = {
     ],
 }
 (MODELS / 'base_case.json').write_text(json.dumps(base, separators=(',', ':')), encoding='utf-8')
-
 for cat in CATEGORIES:
-    child = {
+    (MODELS / f'{cat.lower()}.json').write_text(json.dumps({
         'parent': 'musordrop:item/case_models/base_case',
-        'textures': {
-            'crate': f'musordrop:item/cases/{cat.lower()}',
-            'metal': 'musordrop:item/cases/metal',
-        },
-    }
-    (MODELS / f'{cat.lower()}.json').write_text(json.dumps(child, separators=(',', ':')), encoding='utf-8')
-
+        'textures': {'crate': f'musordrop:item/cases/{cat.lower()}', 'metal': 'musordrop:item/cases/metal'}
+    }, separators=(',', ':')), encoding='utf-8')
 item_model = {'parent': 'musordrop:item/case_models/survival', 'overrides': []}
 for i, cat in enumerate(CATEGORIES[1:], start=1):
-    item_model['overrides'].append({
-        'predicate': {'custom_model_data': i},
-        'model': f'musordrop:item/case_models/{cat.lower()}',
-    })
+    item_model['overrides'].append({'predicate': {'custom_model_data': i}, 'model': f'musordrop:item/case_models/{cat.lower()}'})
 (ROOT / 'models/item/case_display.json').write_text(json.dumps(item_model, separators=(',', ':')), encoding='utf-8')
-
 station_model = {
     'parent': 'minecraft:item/generated',
     'textures': {'layer0': 'musordrop:item/station'},
-    'display': {
-        'gui': {'rotation': [0, 0, -4], 'translation': [0, 0, 0], 'scale': [0.92, 0.92, 0.92]},
-    },
+    'display': {'gui': {'rotation': [0, 0, -4], 'translation': [0, 0, 0], 'scale': [0.92, 0.92, 0.92]}}
 }
 (ROOT / 'models/item/station.json').write_text(json.dumps(station_model, separators=(',', ':')), encoding='utf-8')
 
-# Forge 47.4.x exposes the registered sound constants as Holder.Reference<SoundEvent>.
-# Keep the source UI helper strongly typed to the actual API rather than unsafe casts.
+# Forge 47.4.x has mixed SoundEvents API forms: most entries are direct SoundEvent,
+# while UI_BUTTON_CLICK is a Holder.Reference. Add overloads and remove the one ternary
+# that mixes both types before overload resolution.
 screen_path = Path('musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java')
 if screen_path.exists():
     src = screen_path.read_text(encoding='utf-8')
-    src = src.replace(
-        'private void playUi(SoundEvent event, float pitch)',
-        'private void playUi(net.minecraft.core.Holder<SoundEvent> event, float pitch)'
-    )
+    old_conditional = '''            playUi(ClientState.upgradeSuccess ? SoundEvents.PLAYER_LEVELUP : SoundEvents.UI_BUTTON_CLICK,
+                ClientState.upgradeSuccess ? 1.08F : 0.72F);'''
+    new_conditional = '''            if (ClientState.upgradeSuccess) playUi(SoundEvents.PLAYER_LEVELUP, 1.08F);
+            else playUi(SoundEvents.UI_BUTTON_CLICK, 0.72F);'''
+    src = src.replace(old_conditional, new_conditional)
+    old_helper = '''    private void playUi(SoundEvent event, float pitch) {
+        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(event, pitch));
+    }'''
+    new_helper = '''    private void playUi(SoundEvent event, float pitch) {
+        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(event, pitch));
+    }
+
+    private void playUi(net.minecraft.core.Holder<SoundEvent> event, float pitch) {
+        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(event, pitch));
+    }'''
+    src = src.replace(old_helper, new_helper)
     screen_path.write_text(src, encoding='utf-8')
 
 print('Generated', len(CATEGORIES), 'premium Musor Drop 3D case variants')
