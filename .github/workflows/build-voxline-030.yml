@@ -1,0 +1,119 @@
+name: Build Voxline Voice 0.3.0
+
+on:
+  push:
+    branches:
+      - 'chatgpt/voxline-voice-0.3.0'
+    paths:
+      - 'voxline-030-input/**'
+      - '.github/workflows/build-voxline-030.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify exact source transfer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo 'bbdb2f29b93e8a01d85c0e9821f9e6e9be7e709ff388cf081e44cf4ca9d01ab5  voxline-030-input/xz-00.b64' | sha256sum -c -
+          echo '5c97680aaaceca197764293e209e6d204ccff13e63617cc42508b9d6ab87052c  voxline-030-input/xz-01.b64' | sha256sum -c -
+          echo '3318a1ae88771826d0d346b23972c701e57b9857c4cd184992b23871c8ea40af  voxline-030-input/xz-02.b64' | sha256sum -c -
+          echo '385d6e473d72869f1c80744d32b356ce558146eecfa841a7bcf3b735aa10c072  voxline-030-input/xz-03.b64' | sha256sum -c -
+          echo 'c83790316042b9605daa34839f09b19b631321838f51118af0666a83940157d1  voxline-030-input/xz-04.b64' | sha256sum -c -
+          echo 'c9b590f127722154e3f8f27b8010214ffc08fdcad48d92eea7e2eb6e31037e03  voxline-030-input/xz-05.b64' | sha256sum -c -
+          echo 'ba4a223813cae9f8b0e99fac1851a0ffb191c1325f3b687dde38dd57afd79eaa  voxline-030-input/xz-06.b64' | sha256sum -c -
+          echo '6a482d240f41f1f510f9b5c63b228e207c17f1f133d934c5249fce6f18f6e104  voxline-030-input/xz-07.b64' | sha256sum -c -
+          echo '724262182e63d66b458f86283f93153c22fe9513ac5ec708931d3f948bf210c6  voxline-030-input/xz-08.b64' | sha256sum -c -
+          echo '2b6a277e9570f70ccd30a0d0888c2c334c94d7381d21ec3b42b348dce7d313bb  voxline-030-input/xz-09.b64' | sha256sum -c -
+          echo 'ab48cf0ce60dd820a6f2eec39449465f976aec82a8baff880b6cdcca2833e32e  voxline-030-input/xz-10.b64' | sha256sum -c -
+          cat voxline-030-input/xz-{00..10}.b64 | base64 -d > /tmp/voxline.tar.xz
+          echo '57042a36f6a6a74d1ab11615a71e6771f95cc9c068aa18a2f54fb45ed668366e  /tmp/voxline.tar.xz' | sha256sum -c -
+          xz -t /tmp/voxline.tar.xz
+          mkdir -p voxline
+          tar -xJf /tmp/voxline.tar.xz -C voxline
+          test -f voxline/build.gradle
+          test -f voxline/src/main/java/com/voxline/voice/VoxlineVoice.java
+          grep -q '^minecraft_version=1.20.1$' voxline/gradle.properties
+          grep -q '^forge_version=47.4.10$' voxline/gradle.properties
+          grep -q '^mod_version=0.3.0$' voxline/gradle.properties
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.8
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Static source checks
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(find voxline/src/main/java -name '*.java' | wc -l)" -eq 31
+          ! grep -R --line-number --fixed-string 'catch (Throwable' voxline/src/main/java
+          ! grep -R --line-number -E 'm_[0-9]{3,}_' voxline/src/main/java
+          ! grep -R --line-number --fixed-string 'System.out.' voxline/src/main/java
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for p in Path('voxline/src/main/resources').rglob('*.json'):
+              json.loads(p.read_text(encoding='utf-8'))
+          print('RESOURCE_JSON_PASS')
+          PY
+
+      - name: Core regression self-test
+        working-directory: voxline
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/voxline-coretest && mkdir -p /tmp/voxline-coretest
+          javac --release 17 -Xlint:all -d /tmp/voxline-coretest \
+            src/main/java/com/voxline/voice/audio/AudioSpec.java \
+            src/main/java/com/voxline/voice/audio/AudioProcessor.java \
+            src/main/java/com/voxline/voice/audio/SequenceJitterBuffer.java \
+            src/coretest/java/com/voxline/voice/CoreSelfTest.java
+          java -cp /tmp/voxline-coretest com.voxline.voice.CoreSelfTest | tee /tmp/coretest.log
+          grep -q 'CORE_SELF_TEST: PASS' /tmp/coretest.log
+
+      - name: Clean Forge build
+        working-directory: voxline
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle --no-daemon clean build --stacktrace
+
+      - name: Verify production artifact
+        working-directory: voxline
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ls -lah build/libs
+          JAR="$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*slim*' | head -n1)"
+          test -n "$JAR"
+          unzip -t "$JAR"
+          OUT='build/libs/Voxline-Voice-0.3.0-Forge-1.20.1-47.4.10.jar'
+          cp "$JAR" "$OUT"
+          unzip -p "$OUT" META-INF/mods.toml | grep -q 'modId="voxline"'
+          unzip -p "$OUT" META-INF/mods.toml | grep -Fq 'versionRange="[47.4.10,48)"'
+          unzip -p "$OUT" META-INF/mods.toml | grep -Fq 'versionRange="[1.20.1,1.20.2)"'
+          unzip -l "$OUT" | grep -q 'com/voxline/voice/VoxlineVoice.class'
+          unzip -l "$OUT" | grep -q 'META-INF/jarjar/metadata.json'
+          unzip -p "$OUT" META-INF/jarjar/metadata.json | grep -qi 'concentus'
+          sha256sum "$OUT" | tee build/libs/SHA256SUMS.txt
+
+      - name: Upload production JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: Voxline-Voice-0.3.0-Forge-1.20.1-47.4.10
+          path: |
+            voxline/build/libs/Voxline-Voice-0.3.0-Forge-1.20.1-47.4.10.jar
+            voxline/build/libs/SHA256SUMS.txt
+          if-no-files-found: error
