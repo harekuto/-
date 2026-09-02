@@ -1,0 +1,23 @@
+name: Diagnose Musor Concept Archives
+on:
+  push:
+    branches: [ musor-4.5.0-premium ]
+    paths: [ '.github/workflows/diagnose-musor-concept.yml' ]
+  workflow_dispatch:
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test concept replicas
+        shell: bash
+        run: |
+          set -u
+          for d in concept concept4k; do
+            echo "===== $d ====="
+            cat build-input/$d/part-*.b64 | tr -d '\r\n\t ' | base64 -d > /tmp/$d.zip
+            echo "sha=$(sha256sum /tmp/$d.zip) size=$(stat -c%s /tmp/$d.zip)"
+            unzip -t /tmp/$d.zip || true
+            echo "entries:"
+            unzip -l /tmp/$d.zip | tail -20 || true
+          done
