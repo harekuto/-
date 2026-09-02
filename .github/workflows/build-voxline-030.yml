@@ -12,7 +12,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -42,23 +42,88 @@ jobs:
           grep -q '^forge_version=47.4.10$' voxline/gradle.properties
           grep -q '^mod_version=0.3.0$' voxline/gradle.properties
 
-      - name: Apply verified build metadata fix
+      - name: Apply verified release fixes
         shell: bash
         run: |
           set -euxo pipefail
           python3 - <<'PY'
           from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              if old not in s:
+                  raise SystemExit(f'Expected anchor missing in {path}: {old!r}')
+              s2 = s.replace(old, new, 1)
+              p.write_text(s2, encoding='utf-8')
+
+          # Concentus must be both on compile/runtime classpath and packed by JarJar.
           p = Path('voxline/build.gradle')
           s = p.read_text(encoding='utf-8')
           dep = '    implementation "io.github.jaredmdobson:concentus:1.0.2"\n'
           if dep not in s:
-              needle = '    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"\n'
-              if needle not in s:
-                  raise SystemExit('minecraft dependency anchor not found')
-              s = s.replace(needle, needle + dep, 1)
+              anchor = '    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"\n'
+              if anchor not in s:
+                  raise SystemExit('Minecraft dependency anchor missing')
+              s = s.replace(anchor, anchor + dep, 1)
+          if "options.compilerArgs += ['-Xlint:all', '-Werror']" not in s:
+              old = "options.compilerArgs += ['-Xlint:all']"
+              if old in s:
+                  s = s.replace(old, "options.compilerArgs += ['-Xlint:all', '-Werror']", 1)
+              else:
+                  anchor = "    options.release = 17\n"
+                  if anchor not in s:
+                      raise SystemExit('JavaCompile release anchor missing')
+                  s = s.replace(anchor, anchor + "    options.compilerArgs += ['-Xlint:all', '-Werror']\n", 1)
           p.write_text(s, encoding='utf-8')
+
+          # Forge 47.4.x backports constructor-injected loading context.
+          replace_once(
+              'voxline/src/main/java/com/voxline/voice/VoxlineVoice.java',
+              '    public VoxlineVoice() {\n        IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();',
+              '    public VoxlineVoice(FMLJavaModLoadingContext context) {\n        IEventBus modBus = context.getModEventBus();'
+          )
+          replace_once(
+              'voxline/src/main/java/com/voxline/voice/VoxlineVoice.java',
+              '        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> ClientBootstrap.init(modBus));',
+              '        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> ClientBootstrap.init(modBus, context));'
+          )
+
+          cb = Path('voxline/src/main/java/com/voxline/voice/client/ClientBootstrap.java')
+          s = cb.read_text(encoding='utf-8')
+          if 'import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;' not in s:
+              anchor = 'import net.minecraftforge.fml.ModLoadingContext;\n'
+              if anchor not in s:
+                  raise SystemExit('ClientBootstrap ModLoadingContext import anchor missing')
+              s = s.replace(anchor, 'import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;\n', 1)
+          else:
+              s = s.replace('import net.minecraftforge.fml.ModLoadingContext;\n', '', 1)
+          old = '    public static void init(IEventBus modBus) {'
+          if old not in s:
+              raise SystemExit('ClientBootstrap init signature anchor missing')
+          s = s.replace(old, '    public static void init(IEventBus modBus, FMLJavaModLoadingContext context) {', 1)
+          old = '        ModLoadingContext.get().registerExtensionPoint('
+          if old not in s:
+              raise SystemExit('ClientBootstrap extension point anchor missing')
+          s = s.replace(old, '        context.registerExtensionPoint(', 1)
+          cb.write_text(s, encoding='utf-8')
+
+          replace_once(
+              'voxline/src/main/java/com/voxline/voice/network/VoiceNetwork.java',
+              'new ResourceLocation(VoxlineVoice.MOD_ID, "voice")',
+              'ResourceLocation.fromNamespaceAndPath(VoxlineVoice.MOD_ID, "voice")'
+          )
           PY
+
           grep -Fq 'implementation "io.github.jaredmdobson:concentus:1.0.2"' voxline/build.gradle
+          grep -Fq "options.compilerArgs += ['-Xlint:all', '-Werror']" voxline/build.gradle
+          grep -Fq 'public VoxlineVoice(FMLJavaModLoadingContext context)' voxline/src/main/java/com/voxline/voice/VoxlineVoice.java
+          grep -Fq 'ClientBootstrap.init(modBus, context)' voxline/src/main/java/com/voxline/voice/VoxlineVoice.java
+          grep -Fq 'context.registerExtensionPoint(' voxline/src/main/java/com/voxline/voice/client/ClientBootstrap.java
+          grep -Fq 'ResourceLocation.fromNamespaceAndPath' voxline/src/main/java/com/voxline/voice/network/VoiceNetwork.java
+          ! grep -R --line-number --fixed-string 'ModLoadingContext.get()' voxline/src/main/java
+          ! grep -R --line-number --fixed-string 'FMLJavaModLoadingContext.get()' voxline/src/main/java
+          ! grep -R --line-number --fixed-string 'new ResourceLocation(' voxline/src/main/java
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -93,7 +158,7 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf /tmp/voxline-coretest && mkdir -p /tmp/voxline-coretest
-          javac --release 17 -Xlint:all -d /tmp/voxline-coretest \
+          javac --release 17 -Xlint:all -Werror -d /tmp/voxline-coretest \
             src/main/java/com/voxline/voice/audio/AudioSpec.java \
             src/main/java/com/voxline/voice/audio/AudioProcessor.java \
             src/main/java/com/voxline/voice/audio/SequenceJitterBuffer.java \
@@ -107,6 +172,26 @@ jobs:
         run: |
           set -euxo pipefail
           gradle --no-daemon clean build --stacktrace
+
+      - name: Dedicated server smoke test
+        working-directory: voxline
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p run
+          printf 'eula=true\n' > run/eula.txt
+          rm -f run/logs/latest.log
+          rm -rf run/crash-reports
+          set +e
+          timeout 90s gradle --no-daemon runServer > /tmp/voxline-server.log 2>&1
+          CODE=$?
+          set -e
+          cat /tmp/voxline-server.log
+          test "$CODE" -eq 0 -o "$CODE" -eq 124
+          test -f run/logs/latest.log
+          grep -Fq 'Done (' run/logs/latest.log
+          test ! -d run/crash-reports || test -z "$(find run/crash-reports -type f -print -quit)"
+          ! grep -Eqi 'Exception in thread "main"|ModLoadingException|Failed to complete lifecycle event|Caused by:.*(NoClassDefFoundError|ClassNotFoundException)' run/logs/latest.log
 
       - name: Verify production artifact
         working-directory: voxline
@@ -125,13 +210,15 @@ jobs:
           unzip -l "$OUT" | grep -q 'com/voxline/voice/VoxlineVoice.class'
           unzip -l "$OUT" | grep -q 'META-INF/jarjar/metadata.json'
           unzip -p "$OUT" META-INF/jarjar/metadata.json | grep -qi 'concentus'
+          unzip -l "$OUT" | grep -q 'META-INF/jarjar/concentus-1.0.2.jar'
           sha256sum "$OUT" | tee build/libs/SHA256SUMS.txt
 
       - name: Upload production JAR
         uses: actions/upload-artifact@v4
         with:
-          name: Voxline-Voice-0.3.0-Forge-1.20.1-47.4.10
+          name: Voxline-Voice-0.3.0-Forge-1.20.1-47.4.10-final
           path: |
             voxline/build/libs/Voxline-Voice-0.3.0-Forge-1.20.1-47.4.10.jar
             voxline/build/libs/SHA256SUMS.txt
+            voxline/run/logs/latest.log
           if-no-files-found: error
