@@ -20,8 +20,15 @@ final class SupportLinksTest {
     }
 
     @Test
-    void rejectsUserInfoAndMalformedInput() {
+    void rejectsAmbiguousAuthorityAndNavigationDecorations() {
         assertFalse(SupportLinks.isTrusted("https://user:pass@boosty.to/harekuto/donate"));
+        assertFalse(SupportLinks.isTrusted("https://boosty.to:444/harekuto/donate"));
+        assertTrue(SupportLinks.isTrusted("https://boosty.to:443/harekuto/donate"));
+        assertFalse(SupportLinks.isTrusted("https://boosty.to/harekuto/donate#unexpected"));
+    }
+
+    @Test
+    void rejectsMalformedOrEmptyInput() {
         assertFalse(SupportLinks.isTrusted("not a url"));
         assertFalse(SupportLinks.isTrusted(""));
         assertFalse(SupportLinks.isTrusted(null));
