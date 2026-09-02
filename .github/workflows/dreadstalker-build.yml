@@ -25,33 +25,30 @@ jobs:
         with:
           gradle-version: '8.8'
 
-      - name: Reconstruct and extract project
+      - name: Reconstruct project and apply professional overrides
         run: |
           cat dreadstalker_ci_project.b64.* | tr -d '\n\r' | base64 -d > dreadstalker_ci_project.rebuilt.zip
           rm -rf dreadstalker_ci
           mkdir dreadstalker_ci
           unzip -q dreadstalker_ci_project.rebuilt.zip -d dreadstalker_ci || true
           cp dreadstalker-ci-overrides/src/main/java/com/harekuto/dreadstalker/registry/ModItems.java dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/registry/ModItems.java
+          if [ -d dreadstalker-pro-overrides ]; then cp -R dreadstalker-pro-overrides/. dreadstalker_ci/; fi
           test -f dreadstalker_ci/build.gradle
-          test -f dreadstalker_ci/gradle.properties
-          test -f dreadstalker_ci/src/main/resources/META-INF/mods.toml
-          test -f dreadstalker_ci/src/main/resources/assets/dreadstalker/textures/entity/dreadstalker.png
           test -f dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/entity/DreadstalkerEntity.java
-          test -f dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/client/model/DreadstalkerModel.java
 
-      - name: Inspect baseline sources
+      - name: Validate resources and client/server separation
         working-directory: dreadstalker_ci
         run: |
-          echo '===== FILE TREE ====='
-          find src -type f | sort
-          for f in build.gradle settings.gradle gradle.properties README.md src/main/resources/META-INF/mods.toml src/main/resources/pack.mcmeta src/main/resources/assets/dreadstalker/lang/en_us.json src/main/resources/assets/dreadstalker/lang/ru_ru.json src/main/resources/data/dreadstalker/forge/biome_modifier/spawn_dreadstalker.json $(find src/main/java -type f -name '*.java' | sort); do
-            if [ -f "$f" ]; then
-              echo
-              echo "===== BEGIN $f ====="
-              cat "$f"
-              echo "===== END $f ====="
-            fi
-          done
+          python3 - <<'PY'
+          import json, pathlib
+          for p in pathlib.Path('src/main/resources').rglob('*.json'):
+              json.loads(p.read_text(encoding='utf-8'))
+              print('JSON OK', p)
+          PY
+          if grep -R -nE 'net\.minecraft\.client|net\.minecraftforge\.client|com\.mojang\.blaze3d' src/main/java/com/harekuto/dreadstalker/entity src/main/java/com/harekuto/dreadstalker/registry src/main/java/com/harekuto/dreadstalker/config src/main/java/com/harekuto/dreadstalker/event; then
+            echo 'Client-only import leaked into common/server code' >&2
+            exit 1
+          fi
 
       - name: Build Forge mod
         working-directory: dreadstalker_ci
@@ -60,17 +57,17 @@ jobs:
       - name: Verify release jar
         working-directory: dreadstalker_ci
         run: |
-          JAR='build/libs/dreadstalker-1.1.0.jar'
+          JAR='build/libs/dreadstalker-2.0.0.jar'
           test -f "$JAR"
           jar tf "$JAR" | grep -F 'META-INF/mods.toml'
           jar tf "$JAR" | grep -F 'com/harekuto/dreadstalker/entity/DreadstalkerEntity.class'
-          jar tf "$JAR" | grep -F 'com/harekuto/dreadstalker/client/model/DreadstalkerModel.class'
+          jar tf "$JAR" | grep -F 'com/harekuto/dreadstalker/config/DreadstalkerConfig.class'
           jar tf "$JAR" | grep -F 'assets/dreadstalker/textures/entity/dreadstalker.png'
           unzip -t "$JAR"
 
-      - name: Upload release jar
+      - name: Upload validation jar
         uses: actions/upload-artifact@v4
         with:
-          name: dreadstalker-forge-1.20.1-baseline-inspect
-          path: dreadstalker_ci/build/libs/dreadstalker-1.1.0.jar
+          name: dreadstalker-forge-1.20.1-2.0.0-validation
+          path: dreadstalker_ci/build/libs/dreadstalker-2.0.0.jar
           if-no-files-found: error
