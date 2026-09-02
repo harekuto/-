@@ -1,0 +1,7 @@
+{
+  "entity.dreadstalker.dreadstalker": "Дредсталкер",
+  "item.dreadstalker.dreadstalker_spawn_egg": "Яйцо призыва Дредсталкера",
+  "item.dreadstalker.dread_eye": "Око ужаса",
+  "item.dreadstalker.dread_eye.desc1": "Подсвечивает ближайших Дредсталкеров на 9 секунд.",
+  "item.dreadstalker.dread_eye.desc2": "Радиус 48 блоков • перезарядка 25 секунд • 16 применений"
+}

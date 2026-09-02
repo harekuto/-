@@ -33,8 +33,61 @@ jobs:
           unzip -q dreadstalker_ci_project.rebuilt.zip -d dreadstalker_ci || true
           cp dreadstalker-ci-overrides/src/main/java/com/harekuto/dreadstalker/registry/ModItems.java dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/registry/ModItems.java
           if [ -d dreadstalker-pro-overrides ]; then cp -R dreadstalker-pro-overrides/. dreadstalker_ci/; fi
-          test -f dreadstalker_ci/build.gradle
-          test -f dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/entity/DreadstalkerEntity.java
+
+      - name: Generate polished pixel assets
+        working-directory: dreadstalker_ci
+        run: |
+          python3 - <<'PY'
+          import pathlib, struct, zlib
+
+          def write_png(path, width, height, pixels):
+              path = pathlib.Path(path)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              def chunk(kind, data):
+                  return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+              raw = bytearray()
+              for y in range(height):
+                  raw.append(0)
+                  for x in range(width): raw.extend(pixels[y * width + x])
+              data = b'\x89PNG\r\n\x1a\n'
+              data += chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0))
+              data += chunk(b'IDAT', zlib.compress(bytes(raw), 9))
+              data += chunk(b'IEND', b'')
+              path.write_bytes(data)
+
+          # Emissive UV mask: transparent everywhere except the two eye UV islands.
+          w = h = 128
+          px = [(0,0,0,0)] * (w*h)
+          for y0 in (0, 6):
+              for y in range(y0, min(y0 + 6, h)):
+                  for x in range(111, 124):
+                      edge = min(x-111, 123-x, y-y0, y0+5-y)
+                      if edge <= 0: c = (150, 0, 0, 210)
+                      elif x in range(115,120) and y in range(y0+1,y0+4): c = (255, 210, 185, 255)
+                      else: c = (255, 30, 16, 255)
+                      px[y*w+x] = c
+          write_png('src/main/resources/assets/dreadstalker/textures/entity/dreadstalker_eyes.png', w, h, px)
+
+          # 16x16 Minecraft-native Dread Eye item icon.
+          w = h = 16
+          px = [(0,0,0,0)] * (w*h)
+          for y in range(2,14):
+              for x in range(1,15):
+                  dx=(x-7.5)/7.0; dy=(y-7.5)/5.0
+                  if dx*dx + dy*dy <= 1.0:
+                      border = dx*dx + dy*dy > 0.70
+                      px[y*w+x] = (35,18,20,255) if border else (88,12,14,255)
+          for y in range(5,11):
+              for x in range(5,11):
+                  dx=x-7.5; dy=y-7.5
+                  if dx*dx+dy*dy <= 8.0: px[y*w+x]=(205,15,18,255)
+          for y in range(6,10):
+              for x in range(6,10): px[y*w+x]=(255,54,30,255)
+          px[7*w+7]=(255,235,210,255); px[7*w+8]=(255,190,160,255)
+          for x,y in ((2,5),(3,4),(12,4),(13,6),(2,10),(12,11),(4,12)):
+              px[y*w+x]=(94,72,65,255)
+          write_png('src/main/resources/assets/dreadstalker/textures/item/dread_eye.png', w, h, px)
+          PY
 
       - name: Validate resources and client/server separation
         working-directory: dreadstalker_ci
@@ -45,10 +98,12 @@ jobs:
               json.loads(p.read_text(encoding='utf-8'))
               print('JSON OK', p)
           PY
-          if grep -R -nE 'net\.minecraft\.client|net\.minecraftforge\.client|com\.mojang\.blaze3d' src/main/java/com/harekuto/dreadstalker/entity src/main/java/com/harekuto/dreadstalker/registry src/main/java/com/harekuto/dreadstalker/config src/main/java/com/harekuto/dreadstalker/event; then
+          if grep -R -nE 'net\.minecraft\.client|net\.minecraftforge\.client|com\.mojang\.blaze3d' src/main/java/com/harekuto/dreadstalker/entity src/main/java/com/harekuto/dreadstalker/registry src/main/java/com/harekuto/dreadstalker/config src/main/java/com/harekuto/dreadstalker/event src/main/java/com/harekuto/dreadstalker/item; then
             echo 'Client-only import leaked into common/server code' >&2
             exit 1
           fi
+          test -s src/main/resources/assets/dreadstalker/textures/entity/dreadstalker_eyes.png
+          test -s src/main/resources/assets/dreadstalker/textures/item/dread_eye.png
 
       - name: Build Forge mod
         working-directory: dreadstalker_ci
@@ -62,12 +117,16 @@ jobs:
           jar tf "$JAR" | grep -F 'META-INF/mods.toml'
           jar tf "$JAR" | grep -F 'com/harekuto/dreadstalker/entity/DreadstalkerEntity.class'
           jar tf "$JAR" | grep -F 'com/harekuto/dreadstalker/config/DreadstalkerConfig.class'
-          jar tf "$JAR" | grep -F 'assets/dreadstalker/textures/entity/dreadstalker.png'
+          jar tf "$JAR" | grep -F 'com/harekuto/dreadstalker/item/DreadEyeItem.class'
+          jar tf "$JAR" | grep -F 'com/harekuto/dreadstalker/client/ClientHorrorEvents.class'
+          jar tf "$JAR" | grep -F 'assets/dreadstalker/textures/entity/dreadstalker_eyes.png'
+          jar tf "$JAR" | grep -F 'assets/dreadstalker/textures/item/dread_eye.png'
+          jar tf "$JAR" | grep -F 'data/dreadstalker/loot_tables/entities/dreadstalker.json'
           unzip -t "$JAR"
 
       - name: Upload validation jar
         uses: actions/upload-artifact@v4
         with:
-          name: dreadstalker-forge-1.20.1-2.0.0-validation
+          name: dreadstalker-forge-1.20.1-2.0.0-visual-validation
           path: dreadstalker_ci/build/libs/dreadstalker-2.0.0.jar
           if-no-files-found: error

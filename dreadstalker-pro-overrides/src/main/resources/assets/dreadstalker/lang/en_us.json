@@ -1,0 +1,7 @@
+{
+  "entity.dreadstalker.dreadstalker": "Dreadstalker",
+  "item.dreadstalker.dreadstalker_spawn_egg": "Dreadstalker Spawn Egg",
+  "item.dreadstalker.dread_eye": "Dread Eye",
+  "item.dreadstalker.dread_eye.desc1": "Reveals nearby Dreadstalkers for 9 seconds.",
+  "item.dreadstalker.dread_eye.desc2": "48-block range • 25-second cooldown • 16 uses"
+}
