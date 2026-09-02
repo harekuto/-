@@ -10,7 +10,7 @@ final class CaseLayoutTest {
             CaseLayout.Rect a = CaseLayout.card(i);
             assertTrue(a.x() >= 0 && a.y() >= 0);
             assertTrue(a.x() + a.w() <= CaseLayout.GUI_W);
-            assertTrue(a.y() + a.h() <= 140, "Card must stay above compact navigation row");
+            assertTrue(a.y() + a.h() <= 145, "Cards must stay above navigation row");
             for (int j = i + 1; j < 8; j++) {
                 assertFalse(a.overlaps(CaseLayout.card(j)), "Cards overlap: " + i + " and " + j);
             }
@@ -39,13 +39,21 @@ final class CaseLayoutTest {
 
     @Test
     void exactGridGeometryIsStable() {
-        assertEquals(348, CaseLayout.GUI_W);
-        assertEquals(248, CaseLayout.GUI_H);
+        assertEquals(352, CaseLayout.GUI_W);
+        assertEquals(256, CaseLayout.GUI_H);
         assertEquals(12, CaseLayout.card(0).x());
-        assertEquals(58, CaseLayout.card(0).y());
-        assertEquals(264, CaseLayout.card(3).x());
-        assertEquals(101, CaseLayout.card(4).y());
-        assertEquals(342, CaseLayout.card(7).x() + CaseLayout.card(7).w());
-        assertEquals(139, CaseLayout.card(7).y() + CaseLayout.card(7).h());
+        assertEquals(59, CaseLayout.card(0).y());
+        assertEquals(261, CaseLayout.card(3).x());
+        assertEquals(104, CaseLayout.card(4).y());
+        assertEquals(340, CaseLayout.card(7).x() + CaseLayout.card(7).w());
+        assertEquals(144, CaseLayout.card(7).y() + CaseLayout.card(7).h());
+    }
+
+    @Test
+    void navigationHasComfortablePixelGaps() {
+        assertTrue(CaseLayout.categoryButton().x() - (CaseLayout.prevButton().x() + CaseLayout.prevButton().w()) >= 4);
+        assertTrue(CaseLayout.nextButton().x() - (CaseLayout.categoryButton().x() + CaseLayout.categoryButton().w()) >= 4);
+        assertTrue(CaseLayout.selectedPanel().x() - (CaseLayout.nextButton().x() + CaseLayout.nextButton().w()) >= 6);
+        assertTrue(CaseLayout.openButton().x() - (CaseLayout.selectedPanel().x() + CaseLayout.selectedPanel().w()) >= 4);
     }
 }
