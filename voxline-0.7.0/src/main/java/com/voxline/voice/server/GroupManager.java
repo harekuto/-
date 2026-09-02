@@ -2,6 +2,7 @@ package com.voxline.voice.server;
 
 import com.voxline.voice.network.GroupActionC2SPacket;
 import com.voxline.voice.network.GroupStateS2CPacket;
+import com.voxline.voice.network.VoiceChannel;
 import com.voxline.voice.network.VoiceNetwork;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -126,6 +127,14 @@ public final class GroupManager {
         return g == null ? Set.of() : Set.copyOf(g.members);
     }
 
+    /** Hot-path relay helper: fills the dedup map without allocating a temporary member Set. */
+    public static synchronized void addGroupRecipients(UUID player, Map<UUID, VoiceChannel> recipients) {
+        if (recipients == null) return;
+        Group g = groupOf(player);
+        if (g == null) return;
+        for (UUID id : g.members) if (!id.equals(player)) recipients.put(id, VoiceChannel.GROUP);
+    }
+
     public static synchronized boolean sameGroup(UUID a, UUID b) {
         UUID ga = MEMBER_TO_GROUP.get(a), gb = MEMBER_TO_GROUP.get(b);
         return ga != null && ga.equals(gb);
@@ -193,10 +202,6 @@ public final class GroupManager {
         INVITES.entrySet().removeIf(e -> e.getValue().expiresAt < now || !GROUPS.containsKey(e.getValue().groupId));
     }
 
-    /**
-     * A transient disconnect is not a group leave. Membership survives reconnects for the
-     * lifetime of this server process. Explicit LEAVE/DISBAND/KICK remain authoritative.
-     */
     public static synchronized void onLogout(ServerPlayer player) {
         if (player == null) return;
         remember(player);
