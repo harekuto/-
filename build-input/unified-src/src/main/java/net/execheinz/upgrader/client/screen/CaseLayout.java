@@ -2,15 +2,16 @@ package net.execheinz.upgrader.client.screen;
 
 import net.execheinz.upgrader.menu.StationLayout;
 
+/** Pixel-snapped geometry for the 4x2 case browser. */
 public final class CaseLayout {
     public static final int GUI_W = StationLayout.GUI_W;
     public static final int GUI_H = StationLayout.GUI_H;
 
     public static final int GRID_X = 12;
-    public static final int GRID_Y = 58;
-    public static final int CARD_W = 78;
-    public static final int CARD_H = 38;
-    public static final int GAP_X = 6;
+    public static final int GRID_Y = 59;
+    public static final int CARD_W = 79;
+    public static final int CARD_H = 40;
+    public static final int GAP_X = 4;
     public static final int GAP_Y = 5;
 
     public static Rect card(int index) {
@@ -19,18 +20,19 @@ public final class CaseLayout {
         return new Rect(GRID_X + col * (CARD_W + GAP_X), GRID_Y + row * (CARD_H + GAP_Y), CARD_W, CARD_H);
     }
 
-    public static Rect prevButton() { return new Rect(12, 143, 28, 18); }
-    public static Rect categoryButton() { return new Rect(44, 143, 70, 18); }
-    public static Rect nextButton() { return new Rect(118, 143, 28, 18); }
-    public static Rect selectedPanel() { return new Rect(150, 143, 104, 18); }
-    public static Rect openButton() { return new Rect(258, 143, 78, 18); }
+    public static Rect prevButton() { return new Rect(12, 150, 28, 16); }
+    public static Rect categoryButton() { return new Rect(44, 150, 84, 16); }
+    public static Rect nextButton() { return new Rect(132, 150, 28, 16); }
+    public static Rect selectedPanel() { return new Rect(166, 150, 84, 16); }
+    public static Rect openButton() { return new Rect(254, 150, 86, 16); }
 
     public record Rect(int x, int y, int w, int h) {
         public boolean contains(double px, double py) {
             return px >= x && px < x + w && py >= y && py < y + h;
         }
-        public boolean overlaps(Rect o) {
-            return x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y;
+
+        public boolean overlaps(Rect other) {
+            return x < other.x + other.w && x + w > other.x && y < other.y + other.h && y + h > other.y;
         }
     }
 
