@@ -21,10 +21,28 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf /tmp/musor-premium.zip musor-drop
-          : > /tmp/musor-premium.zip
-          for p in $(find build-input/premium440 -maxdepth 1 -type f -name 'part-*.b64' | sort); do
-            base64 -d "$p" >> /tmp/musor-premium.zip
-          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,re
+          out=bytearray()
+          parts=sorted(Path('build-input/premium440').glob('part-*.b64'))
+          assert parts
+          for p in parts:
+              raw=p.read_text(encoding='utf-8',errors='ignore')
+              clean=''.join(re.findall(r'[A-Za-z0-9+/=]',raw))
+              # Each file is an independently encoded binary chunk. Ignore any accidental
+              # non-base64 transport bytes while preserving its own padding.
+              if len(clean)%4:
+                  clean += '='*((4-len(clean)%4)%4)
+              try:
+                  chunk=base64.b64decode(clean,validate=False)
+              except Exception as exc:
+                  raise RuntimeError(f'{p}: cannot decode {len(clean)} chars') from exc
+              print(p.name,'raw',len(raw),'clean',len(clean),'decoded',len(chunk),'head',chunk[:4].hex())
+              out.extend(chunk)
+          Path('/tmp/musor-premium.zip').write_bytes(out)
+          print('PREMIUM_ZIP_BYTES',len(out),'HEAD',bytes(out[:4]).hex(),'TAIL',bytes(out[-22:]).hex())
+          PY
           ls -lh /tmp/musor-premium.zip
           unzip -tq /tmp/musor-premium.zip
           mkdir -p musor-drop
