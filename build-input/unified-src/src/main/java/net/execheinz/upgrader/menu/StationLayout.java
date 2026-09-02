@@ -16,7 +16,7 @@ public final class StationLayout {
 
     /** Player inventory starts after the left utility dock. */
     public static final int INVENTORY_X = 178;
-    public static final int INVENTORY_Y = 183;
+    public static final int INVENTORY_Y = 182;
     public static final int HOTBAR_Y = 237;
 
     private StationLayout() {}
