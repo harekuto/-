@@ -31,12 +31,14 @@ jobs:
           rm -rf dreadstalker_ci
           mkdir dreadstalker_ci
           unzip -q dreadstalker_ci_project.rebuilt.zip -d dreadstalker_ci || true
+          cp dreadstalker-ci-overrides/src/main/java/com/harekuto/dreadstalker/registry/ModItems.java dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/registry/ModItems.java
           test -f dreadstalker_ci/build.gradle
           test -f dreadstalker_ci/gradle.properties
           test -f dreadstalker_ci/src/main/resources/META-INF/mods.toml
           test -f dreadstalker_ci/src/main/resources/assets/dreadstalker/textures/entity/dreadstalker.png
           test -f dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/entity/DreadstalkerEntity.java
           test -f dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/client/model/DreadstalkerModel.java
+          grep -F 'ModEntities.DREADSTALKER.get()' dreadstalker_ci/src/main/java/com/harekuto/dreadstalker/registry/ModItems.java
 
       - name: Build Forge mod
         working-directory: dreadstalker_ci
