@@ -41,8 +41,6 @@ def rgba(v, factor=1.0, alpha=255):
 
 
 def make_station_icon():
-    # 32x32 transparent pixel emblem: asymmetric Musor Drop rune, intentionally
-    # simple enough to read at inventory scale while retaining the lavender identity.
     p = [(0, 0, 0, 0)] * (32 * 32)
     def rect(x0, y0, x1, y1, c):
         for y in range(y0, y1):
@@ -83,7 +81,6 @@ def make_case_tex(v, idx):
     glow = (241, 221, 255, 255)
     gold = (231, 190, 106, 255)
 
-    # Body with deliberately pixelated face shading.
     for y in range(4, 14):
         for x in range(2, 14):
             checker = ((x + y + idx) & 3) == 0
@@ -91,7 +88,6 @@ def make_case_tex(v, idx):
             if checker and 3 < x < 13 and 5 < y < 13:
                 put(x, y, rgba(v, .62))
 
-    # Lid and bevels.
     for y in range(1, 5):
         for x in range(3, 13):
             put(x, y, light if y < 3 else mid)
@@ -104,7 +100,6 @@ def make_case_tex(v, idx):
     for x in range(4, 12):
         put(x, 2, hi if ((x + idx) & 1) == 0 else light)
 
-    # Metallic lock and front bands.
     for y in range(7, 12):
         put(7, y, gold)
         put(8, y, glow if y in (8, 9) else gold)
@@ -112,13 +107,11 @@ def make_case_tex(v, idx):
         put(4, y, dark)
         put(11, y, dark)
 
-    # Deterministic category rune: every category gets a visibly different front mark.
     rune = (idx * 0x45D9 + 0x1D3) & 0x1FF
     for bit in range(9):
         if (rune >> bit) & 1:
             put(5 + (bit % 3), 7 + (bit // 3), glow)
 
-    # Tiny corner gem differs by category and makes the case read as premium.
     gemx = 10 + (idx & 1)
     gemy = 6 + ((idx >> 1) & 1)
     put(gemx, gemy, hi)
@@ -129,7 +122,6 @@ def make_case_tex(v, idx):
 for i, cat in enumerate(CATEGORIES):
     png(TEX / f'{cat.lower()}.png', 16, 16, make_case_tex(ACCENTS[i], i))
 
-# Shared metal texture used by physical bands/corners/lock.
 metal = []
 for y in range(16):
     for x in range(16):
@@ -145,8 +137,7 @@ png(TEX / 'metal.png', 16, 16, metal)
 def all_faces(texture):
     return {k: {'texture': texture} for k in ['north', 'south', 'west', 'east', 'up', 'down']}
 
-# More complex geometry than the previous box-like case: body, raised lid, corner armour,
-# front lock, lid spine, side rails and a top gem. Still vanilla baked-model JSON only.
+
 base = {
     'ambientocclusion': True,
     'textures': {'particle': '#crate'},
@@ -198,5 +189,16 @@ station_model = {
     },
 }
 (ROOT / 'models/item/station.json').write_text(json.dumps(station_model, separators=(',', ':')), encoding='utf-8')
+
+# Forge 47.4.x exposes the registered sound constants as Holder.Reference<SoundEvent>.
+# Keep the source UI helper strongly typed to the actual API rather than unsafe casts.
+screen_path = Path('musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java')
+if screen_path.exists():
+    src = screen_path.read_text(encoding='utf-8')
+    src = src.replace(
+        'private void playUi(SoundEvent event, float pitch)',
+        'private void playUi(net.minecraft.core.Holder<SoundEvent> event, float pitch)'
+    )
+    screen_path.write_text(src, encoding='utf-8')
 
 print('Generated', len(CATEGORIES), 'premium Musor Drop 3D case variants')
