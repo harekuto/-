@@ -4,7 +4,8 @@ on:
   push:
     branches: [ musor-4.5.0-premium ]
     paths:
-      - 'build-input/final450/**'
+      - 'build-input/premium440/**'
+      - 'build-input/part-*.b64'
       - '.github/workflows/build-musor-drop-450.yml'
   workflow_dispatch:
 
@@ -16,16 +17,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reconstruct exact 4.5.0 source
+      - name: Reconstruct 4.4 base and 4.5 delta
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf musor-drop /tmp/musor-450-source.zip
+          decode_parts() {
+            local glob="$1"
+            local out="$2"
+            rm -f "$out" "$out.tmp"
+            set +e
+            cat $glob | base64 -d > "$out.tmp" 2>/tmp/b64err
+            local rc=$?
+            set -e
+            if [ "$rc" -eq 0 ] && unzip -tq "$out.tmp" >/dev/null 2>&1; then
+              mv "$out.tmp" "$out"
+              return 0
+            fi
+            rm -f "$out.tmp"
+            : > "$out"
+            for p in $glob; do
+              base64 -d "$p" >> "$out"
+            done
+            unzip -tq "$out"
+          }
+
+          rm -rf musor-drop /tmp/base440.zip /tmp/delta450.zip
           mkdir -p musor-drop
-          cat build-input/final450/part-*.b64 | base64 -d > /tmp/musor-450-source.zip
-          sha256sum /tmp/musor-450-source.zip
-          unzip -t /tmp/musor-450-source.zip
-          unzip -q /tmp/musor-450-source.zip -d musor-drop
+          decode_parts 'build-input/premium440/part-*.b64' /tmp/base440.zip
+          decode_parts 'build-input/part-*.b64' /tmp/delta450.zip
+          echo BASE_SHA=$(sha256sum /tmp/base440.zip | awk '{print $1}')
+          echo DELTA_SHA=$(sha256sum /tmp/delta450.zip | awk '{print $1}')
+          echo '=== BASE CONTENTS ==='
+          unzip -l /tmp/base440.zip | head -80
+          echo '=== DELTA CONTENTS ==='
+          unzip -l /tmp/delta450.zip | head -120
+          unzip -q /tmp/base440.zip -d musor-drop
+          unzip -qo /tmp/delta450.zip -d musor-drop
           echo '=== project root ==='
           find musor-drop -maxdepth 2 -type f | sort | head -120
           test -f musor-drop/build.gradle
@@ -71,14 +98,12 @@ jobs:
           for p in root.rglob('*.json'):
               json.loads(p.read_text(encoding='utf-8')); json_count += 1
           for p in root.rglob('*.png'):
-              d=p.read_bytes()
-              assert d[:8] == b'\x89PNG\r\n\x1a\n', p
+              d=p.read_bytes(); assert d[:8] == b'\x89PNG\r\n\x1a\n', p
               assert d[12:16] == b'IHDR', p
-              w,h=struct.unpack('>II', d[16:24])
-              assert w > 0 and h > 0, p
+              w,h=struct.unpack('>II', d[16:24]); assert w>0 and h>0
               png_count += 1
           for p in [root/'assets/musordrop/textures/gui/upgrade_concept.png', root/'assets/musordrop/textures/gui/cases_concept.png']:
-              d=p.read_bytes(); w,h=struct.unpack('>II', d[16:24]); assert (w,h)==(384,288),(p,w,h)
+              d=p.read_bytes(); w,h=struct.unpack('>II',d[16:24]); assert (w,h)==(384,288),(p,w,h)
           print('RESOURCE_AUDIT_OK JSON',json_count,'PNG',png_count)
           PY
 
@@ -101,15 +126,11 @@ jobs:
           tests=failures=errors=skipped=0
           for f in files:
               root=ET.parse(f).getroot()
-              tests += int(root.attrib.get('tests',0))
-              failures += int(root.attrib.get('failures',0))
-              errors += int(root.attrib.get('errors',0))
-              skipped += int(root.attrib.get('skipped',0))
+              tests += int(root.attrib.get('tests',0)); failures += int(root.attrib.get('failures',0)); errors += int(root.attrib.get('errors',0)); skipped += int(root.attrib.get('skipped',0))
           print(f'JUNIT_TOTAL={tests} FAILURES={failures} ERRORS={errors} SKIPPED={skipped}')
           assert tests >= 12000, tests
           assert failures == 0 and errors == 0
-          Path('musor-drop/build/test-count.txt').write_text(
-              f'JUnit tests: {tests}\nFailures: {failures}\nErrors: {errors}\nSkipped: {skipped}\n')
+          Path('musor-drop/build/test-count.txt').write_text(f'JUnit tests: {tests}\nFailures: {failures}\nErrors: {errors}\nSkipped: {skipped}\n')
           PY
 
       - name: Production JAR audit
@@ -131,12 +152,7 @@ jobs:
           secret=re.compile(rb'(sk-[A-Za-z0-9_-]{20,}|discord(?:app)?\.com/api/webhooks|BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY|api[_-]?key\s*[=:])',re.I)
           with zipfile.ZipFile(jar) as z:
               names=set(z.namelist())
-              required={
-                'assets/musordrop/textures/gui/upgrade_concept.png',
-                'assets/musordrop/textures/gui/cases_concept.png',
-                'assets/musordrop/models/item/case_models/master.json',
-                'data/musordrop/recipes/station.json'
-              }
+              required={'assets/musordrop/textures/gui/upgrade_concept.png','assets/musordrop/textures/gui/cases_concept.png','assets/musordrop/models/item/case_models/master.json','data/musordrop/recipes/station.json'}
               for n in z.namelist():
                   d=z.read(n)
                   if n.endswith('.class'):
