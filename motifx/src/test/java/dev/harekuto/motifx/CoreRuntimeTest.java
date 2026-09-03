@@ -3,7 +3,6 @@ package dev.harekuto.motifx;
 import dev.harekuto.motifx.api.animation.AnimationModel.Bone;
 import dev.harekuto.motifx.api.animation.AnimationModel.Pose;
 import dev.harekuto.motifx.api.animation.AnimationModel.Skeleton;
-import dev.harekuto.motifx.api.animation.AnimationRuntime;
 import dev.harekuto.motifx.api.animation.AnimationRuntime.BlendMode;
 import dev.harekuto.motifx.api.animation.AnimationRuntime.BoneMask;
 import dev.harekuto.motifx.api.animation.AnimationRuntime.BoneTrack;
@@ -15,6 +14,7 @@ import dev.harekuto.motifx.api.animation.AnimationRuntime.Mixer;
 import dev.harekuto.motifx.api.animation.AnimationRuntime.QuatTrack;
 import dev.harekuto.motifx.api.animation.AnimationRuntime.VecTrack;
 import dev.harekuto.motifx.api.compat.CompatibilityApi;
+import dev.harekuto.motifx.api.compat.importer.BedrockAnimationImporter;
 import dev.harekuto.motifx.api.diagnostics.Diagnostics;
 import dev.harekuto.motifx.api.graph.GraphRuntime;
 import dev.harekuto.motifx.api.math.MathTypes.Quatf;
@@ -116,6 +116,30 @@ class CoreRuntimeTest {
         assertEquals(Diagnostics.AssetFormat.GECKOLIB_BEDROCK_ANIMATION, report.format());
         assertFalse(report.valid());
         assertTrue(report.issues().stream().anyMatch(issue -> issue.code().equals("duration")));
+    }
+
+    @Test
+    void numericBedrockGeckoImporterMapsBonesKeyframesAndLoop() {
+        Skeleton skeleton = skeleton();
+        String json = "{\"animations\":{\"walk\":{\"loop\":true,\"animation_length\":1.0,\"bones\":{\"arm\":{\"position\":{\"0.0\":[0,0,0],\"1.0\":[2,0,0]},\"rotation\":[0,90,0]},\"missing_bone\":{\"position\":[1,2,3]}}}}}";
+        BedrockAnimationImporter.ImportResult imported = BedrockAnimationImporter.importAnimations(json, skeleton);
+        assertTrue(imported.valid());
+        assertTrue(imported.issues().stream().anyMatch(issue -> issue.code().equals("unknown_bone")));
+        Clip clip = imported.clips().get("walk");
+        assertNotNull(clip);
+        assertEquals(LoopMode.LOOP, clip.loopMode());
+        Pose pose = new Pose(skeleton);
+        clip.sample(skeleton, 0.5f, pose);
+        assertEquals(1f, pose.get(1).translation().x(), 1.0e-5f);
+        assertTrue(pose.isFinite());
+    }
+
+    @Test
+    void numericImporterReportsMolangInsteadOfPretendingToSupportIt() {
+        String json = "{\"animations\":{\"dynamic\":{\"bones\":{\"arm\":{\"position\":[\"query.anim_time\",0,0]}}}}}";
+        BedrockAnimationImporter.ImportResult imported = BedrockAnimationImporter.importAnimations(json, skeleton());
+        assertTrue(imported.valid());
+        assertTrue(imported.issues().stream().anyMatch(issue -> issue.code().equals("unsupported_channel") || issue.code().equals("unsupported_expression")));
     }
 
     @Test

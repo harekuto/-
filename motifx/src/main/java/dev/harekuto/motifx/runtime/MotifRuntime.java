@@ -11,10 +11,10 @@ import dev.harekuto.motifx.api.animation.AnimationRuntime.LoopMode;
 import dev.harekuto.motifx.api.animation.AnimationRuntime.QuatTrack;
 import dev.harekuto.motifx.api.compat.CompatibilityApi.PosePipeline;
 import dev.harekuto.motifx.api.compat.CompatibilityApi.Registry;
+import dev.harekuto.motifx.api.compat.importer.BedrockAnimationImporter;
 import dev.harekuto.motifx.api.diagnostics.Diagnostics;
 import dev.harekuto.motifx.api.math.MathTypes.Quatf;
 import dev.harekuto.motifx.api.math.MathTypes.Transform;
-import dev.harekuto.motifx.api.math.MathTypes.Vec3f;
 
 import java.util.List;
 import java.util.Set;
@@ -37,6 +37,7 @@ public final class MotifRuntime {
         "priority-transitions",
         "pose-compositor-spi",
         "compatibility-adapter-spi",
+        "bedrock-geckolib-numeric-import",
         "asset-format-detection",
         "structured-validation",
         "runtime-metrics",
@@ -65,10 +66,19 @@ public final class MotifRuntime {
             Pose pose = new Pose(skeleton);
             clip.sample(skeleton, 0.5f, pose);
             metrics.poseEvaluated();
+
             Diagnostics.Report report = Diagnostics.validateAnimationJson("{\"format_version\":1,\"clips\":{\"selftest\":{}}}");
             metrics.validation(report.errorCount());
-            boolean ok = pose.isFinite() && report.valid() && Diagnostics.detectFormat("{\"animations\":{\"idle\":{\"animation_length\":1}}}") == Diagnostics.AssetFormat.GECKOLIB_BEDROCK_ANIMATION;
-            return new SelfTestResult(ok, ok ? "core math, sampling and format validation passed" : "core self-test returned an invalid state");
+
+            String compatibleJson = "{\"animations\":{\"imported\":{\"loop\":true,\"animation_length\":1,\"bones\":{\"arm\":{\"rotation\":[0,45,0]}}}}}";
+            BedrockAnimationImporter.ImportResult imported = BedrockAnimationImporter.importAnimations(compatibleJson, skeleton);
+
+            boolean ok = pose.isFinite()
+                && report.valid()
+                && imported.valid()
+                && imported.clips().containsKey("imported")
+                && Diagnostics.detectFormat(compatibleJson) == Diagnostics.AssetFormat.GECKOLIB_BEDROCK_ANIMATION;
+            return new SelfTestResult(ok, ok ? "core math, sampling, validation and compatibility import passed" : "core self-test returned an invalid state");
         } catch (RuntimeException ex) {
             return new SelfTestResult(false, ex.getClass().getSimpleName() + ": " + ex.getMessage());
         }

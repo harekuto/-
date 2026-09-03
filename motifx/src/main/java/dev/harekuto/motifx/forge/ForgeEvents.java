@@ -37,6 +37,12 @@ public final class ForgeEvents {
 
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
+        MotifRuntime.SelfTestResult result = MotifRuntime.INSTANCE.selfTest();
+        if (result.passed()) {
+            MotifX.LOGGER.info("MotifX runtime self-test PASS: {}", result.detail());
+        } else {
+            MotifX.LOGGER.error("MotifX runtime self-test FAIL: {}", result.detail());
+        }
         MotifX.LOGGER.info("MotifX dedicated/common runtime ready; {} features enabled", MotifRuntime.INSTANCE.features().size());
     }
 }
