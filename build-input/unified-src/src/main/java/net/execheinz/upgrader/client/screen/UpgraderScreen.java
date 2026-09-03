@@ -223,6 +223,7 @@ public final class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> 
         sellOneButton.visible = cases;
         sellStackButton.visible = cases;
 
+        updateUpgradeButtonState();
         updateCaseButtons();
     }
 
@@ -254,7 +255,6 @@ public final class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> 
             if (q.isEmpty() || id.toString().toLowerCase(Locale.ROOT).contains(q) || name.contains(q)) {
                 targetCursor = idx;
                 selectedTarget = id;
-                playUi(SoundEvents.UI_BUTTON_CLICK, 1.08F);
                 return;
             }
         }
@@ -324,6 +324,25 @@ public final class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> 
         refreshButton.active = ready;
         sellOneButton.active = ready;
         sellStackButton.active = ready;
+    }
+
+    private void updateUpgradeButtonState() {
+        if (upgradeButton == null) return;
+
+        ItemStack input = menu.getInputStack();
+        Item target = ForgeRegistries.ITEMS.getValue(selectedTarget);
+        ResourceLocation inputId = input == null || input.isEmpty()
+            ? null
+            : ForgeRegistries.ITEMS.getKey(input.getItem());
+        double chance = estimateChance(input, target);
+
+        upgradeButton.active = tab == MainTab.UPGRADE
+            && input != null
+            && !input.isEmpty()
+            && target != null
+            && inputId != null
+            && !inputId.equals(selectedTarget)
+            && chance > 0D;
     }
 
     private void changePage(int delta) {
@@ -407,6 +426,7 @@ public final class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> 
             playUi(SoundEvents.UI_BUTTON_CLICK, 0.66F);
         }
 
+        updateUpgradeButtonState();
         updateCaseButtons();
     }
 
@@ -788,13 +808,11 @@ public final class UpgraderScreen extends AbstractContainerScreen<UpgraderMenu> 
         }
 
         ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
-        if (id != null && "minecraft".equals(id.getNamespace())) {
-            try {
-                g.renderItem(stack, x, y);
-                return;
-            } catch (RuntimeException ex) {
-                Upgrader.LOGGER.debug("Vanilla preview render failed for {}", id, ex);
-            }
+        try {
+            g.renderItem(stack, x, y);
+            return;
+        } catch (RuntimeException ex) {
+            Upgrader.LOGGER.debug("Item preview render failed for {}; using fallback", id, ex);
         }
 
         drawFallbackCube(g, x, y, MusorTheme.ACCENT_DARK);
