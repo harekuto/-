@@ -1,0 +1,33 @@
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1] if len(sys.argv) > 1 else "musor-drop")
+screen = root / "src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java"
+text = screen.read_text(encoding="utf-8")
+
+def method_bounds(src, signature):
+    start = src.find(signature)
+    if start < 0:
+        raise SystemExit(f'method not found: {signature!r}')
+    brace = src.find('{', start)
+    depth = 0
+    for i in range(brace, len(src)):
+        if src[i] == '{':
+            depth += 1
+        elif src[i] == '}':
+            depth -= 1
+            if depth == 0:
+                return start, i + 1
+    raise SystemExit(f'unbalanced method: {signature!r}')
+
+def replace_method(src, signature, replacement):
+    start, end = method_bounds(src, signature)
+    return src[:start] + replacement + src[end:]
+
+def insert_after_method(src, anchor_signature, method_signature, method_text):
+    if method_signature in src:
+        return src
+    _, end = method_bounds(src, anchor_signature)
+    return src[:end] + '\n\n' + method_text + src[end:]
+
+M_32 = '    @Override\n    protected void init() {\n        super.init();\n        buildTargetCatalog();\n        buildCategories();\n\n        upgradeTab = addRenderableWidget(button(12, 32, 62, 17, ModLanguage.tr("АПГРЕЙД", "UPGRADE"),\n            MusorButton.Style.TAB, () -> switchTab(MainTab.UPGRADE)));\n        casesTab = addRenderableWidget(button(78, 32, 58, 17, ModLanguage.tr("КЕЙСЫ", "CASES"),\n            MusorButton.Style.TAB, () -> switchTab(MainTab.CASES)));\n        supportTab = addRenderableWidget(button(140, 32, 72, 17, ModLanguage.tr("ПОДДЕРЖКА", "SUPPORT"),\n            MusorButton.Style.TAB, this::showSupportPage));\n        languageToggle = addRenderableWidget(button(302, 7, 22, 15, ModLanguage.russian() ? "RU" : "EN",\n            MusorButton.Style.COMPACT, () -> {\n                ModLanguage.choose(!ModLanguage.russian());\n                refreshTexts();\n            }));\n\n        russianButton = addRenderableWidget(button(64, 122, 96, 22, "РУССКИЙ",\n            MusorButton.Style.PRIMARY, () -> chooseLanguage(true)));\n        englishButton = addRenderableWidget(button(176, 122, 96, 22, "ENGLISH",\n            MusorButton.Style.PRIMARY, () -> chooseLanguage(false)));\n\n        targetSearch = addRenderableWidget(new EditBox(font, leftPos + 235, topPos + 109, 78, 12, Component.literal("Search target")));\n        targetSearch.setMaxLength(48);\n        targetSearch.setBordered(false);\n        targetSearch.setHint(Component.literal(ModLanguage.tr("Поиск цели...", "Search target...")));\n\n        targetNext = addRenderableWidget(button(232, 126, 84, 16, ModLanguage.tr("ДРУГАЯ ЦЕЛЬ", "NEXT TARGET"),\n            MusorButton.Style.COMPACT, this::nextTarget));\n\n        upgradeButton = addRenderableWidget(button(116, 124, 104, 19, ModLanguage.tr("УЛУЧШИТЬ", "UPGRADE"),\n            MusorButton.Style.PRIMARY, () -> {\n                ModNetwork.sendToServer(new C2SUpgradePacket(selectedTarget.toString()));\n                toast = ModLanguage.tr("Сервер проверяет попытку...", "Server is resolving...");\n                toastUntil = System.currentTimeMillis() + 1400L;\n            }));\n\n        caseSearch = addRenderableWidget(new EditBox(font, leftPos + 218, topPos + 34, 103, 13, Component.literal("Search cases")));\n        caseSearch.setMaxLength(48);\n        caseSearch.setBordered(false);\n        caseSearch.setHint(Component.literal(ModLanguage.tr("Поиск кейса...", "Search cases...")));\n        caseSearch.setResponder(v -> rebuildCaseFilter());\n\n        CaseLayout.Rect prev = CaseLayout.prevButton();\n        CaseLayout.Rect cat = CaseLayout.categoryButton();\n        CaseLayout.Rect next = CaseLayout.nextButton();\n        CaseLayout.Rect open = CaseLayout.openButton();\n\n        prevButton = addRenderableWidget(button(prev.x(), prev.y(), prev.w(), prev.h(), "<",\n            MusorButton.Style.COMPACT, () -> changePage(-1)));\n        categoryButton = addRenderableWidget(button(cat.x(), cat.y(), cat.w(), cat.h(), "ALL",\n            MusorButton.Style.SECONDARY, this::cycleCategory));\n        nextButton = addRenderableWidget(button(next.x(), next.y(), next.w(), next.h(), ">",\n            MusorButton.Style.COMPACT, () -> changePage(1)));\n        openCaseButton = addRenderableWidget(button(open.x(), open.y(), open.w(), open.h(), ModLanguage.tr("ОТКРЫТЬ КЕЙС", "OPEN CASE"),\n            MusorButton.Style.PRIMARY, this::openSelectedCase
