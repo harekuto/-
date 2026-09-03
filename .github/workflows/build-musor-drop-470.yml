@@ -5,6 +5,9 @@ on:
     branches: [ musor-4.7.0-ui-rebuild ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -98,6 +101,19 @@ jobs:
           cp "$JAR" "$FINAL"
           unzip -t "$FINAL"
           sha256sum "$FINAL" > musor-drop/build/libs/SHA256SUMS.txt
+
+
+      - name: Publish successful run marker
+        if: success()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          printf '%s %s\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > build-input/latest-musor-run.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add build-input/latest-musor-run.txt
+          git commit -m "[skip ci] Musor Drop successful build $GITHUB_RUN_ID" || exit 0
+          git push origin HEAD:musor-4.7.0-ui-rebuild
 
       - uses: actions/upload-artifact@v4
         with:
