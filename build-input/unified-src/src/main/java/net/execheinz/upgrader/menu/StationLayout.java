@@ -1,23 +1,23 @@
 package net.execheinz.upgrader.menu;
 
 /**
- * Shared logical coordinates for the single Musor Drop station screen.
+ * Shared pixel-snapped coordinates for the compact Musor Drop station.
  *
- * The 352x256 canvas is deliberately capped so GUI scale 4 still fits a
- * 1440x~1030 desktop while giving the redesigned views enough breathing room.
+ * 320x240 deliberately leaves breathing room on 16:9 and 4:3 screens at high GUI scales
+ * while still fitting the complete 9x4 player inventory and the server-owned transaction slot.
  */
 public final class StationLayout {
-    public static final int GUI_W = 352;
-    public static final int GUI_H = 256;
+    public static final int GUI_W = 320;
+    public static final int GUI_H = 240;
 
     /** Transaction slot shared by Upgrade and Cases/Sell. */
-    public static final int INPUT_X = 31;
-    public static final int INPUT_Y = 194;
+    public static final int INPUT_X = 29;
+    public static final int INPUT_Y = 181;
 
-    /** Player inventory starts after the left utility dock. */
-    public static final int INVENTORY_X = 178;
-    public static final int INVENTORY_Y = 182;
-    public static final int HOTBAR_Y = 237;
+    /** Player inventory is aligned to the vanilla 18px grid on the right. */
+    public static final int INVENTORY_X = 146;
+    public static final int INVENTORY_Y = 164;
+    public static final int HOTBAR_Y = 219;
 
     private StationLayout() {}
 }
