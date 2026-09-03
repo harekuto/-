@@ -44,6 +44,8 @@ jobs:
               json.loads(p.read_text(encoding='utf-8'))
           json.loads(pathlib.Path('motifx/src/main/resources/pack.mcmeta').read_text(encoding='utf-8'))
           PY
+          grep -q 'versionRange="\[1.20.1\]"' motifx/src/main/resources/META-INF/mods.toml
+          grep -q 'versionRange="\[47.4.10,48)"' motifx/src/main/resources/META-INF/mods.toml
           ! grep -R --line-number --fixed-string 'catch (Throwable' motifx/src/main/java
           ! grep -R --line-number -E 'm_[0-9]{3,}_' motifx/src/main/java
           ! grep -R --line-number --fixed-string 'System.out.' motifx/src/main/java
@@ -64,16 +66,17 @@ jobs:
           JAR="$(find motifx/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -n1)"
           test -n "$JAR"
           unzip -t "$JAR"
-          OUT='motifx/build/release/MotifX-0.2.0-dev.2-forge-1.20.1.jar'
+          OUT='motifx/build/release/MotifX-0.2.0-dev.3-forge-1.20.1.jar'
           cp "$JAR" "$OUT"
           unzip -p "$OUT" META-INF/mods.toml | grep -q 'modId="motifx"'
-          unzip -p "$OUT" META-INF/mods.toml | grep -q 'version="0.2.0-dev.2"'
+          unzip -p "$OUT" META-INF/mods.toml | grep -q 'version="0.2.0-dev.3"'
+          unzip -p "$OUT" META-INF/mods.toml | grep -q 'versionRange="\[1.20.1\]"'
           unzip -l "$OUT" | grep -q 'dev/harekuto/motifx/api/animation/AnimationRuntime'
           unzip -l "$OUT" | grep -q 'dev/harekuto/motifx/api/compat/importer/BedrockAnimationImporter'
           unzip -l "$OUT" | grep -q 'dev/harekuto/motifx/client/screen/MotifInspectorScreen'
           unzip -l "$OUT" | grep -q 'assets/motifx/lang/en_us.json'
-          git archive --format=zip --output='motifx/build/release/MotifX-0.2.0-dev.2-SOURCE.zip' "$GITHUB_SHA" motifx
-          sha256sum motifx/build/release/MotifX-0.2.0-dev.2-forge-1.20.1.jar motifx/build/release/MotifX-0.2.0-dev.2-SOURCE.zip | tee motifx/build/release/SHA256SUMS.txt
+          git archive --format=zip --output='motifx/build/release/MotifX-0.2.0-dev.3-SOURCE.zip' "$GITHUB_SHA" motifx
+          sha256sum motifx/build/release/MotifX-0.2.0-dev.3-forge-1.20.1.jar motifx/build/release/MotifX-0.2.0-dev.3-SOURCE.zip | tee motifx/build/release/SHA256SUMS.txt
 
       - name: Dedicated server smoke test
         working-directory: motifx
@@ -88,7 +91,7 @@ jobs:
           set -e
           if [ "$STATUS" -ne 0 ] && [ "$STATUS" -ne 124 ] && [ "$STATUS" -ne 130 ]; then exit "$STATUS"; fi
           test -f run/logs/latest.log
-          grep -q 'MotifX 0.2.0-dev.2 initialized' run/logs/latest.log
+          grep -q 'MotifX 0.2.0-dev.3 initialized' run/logs/latest.log
           grep -q 'MotifX runtime self-test PASS' run/logs/latest.log
           grep -q 'MotifX dedicated/common runtime ready' run/logs/latest.log
           ! grep -E 'NoClassDefFoundError|ExceptionInInitializerError|ModLoadingException' run/logs/latest.log
@@ -96,7 +99,7 @@ jobs:
       - name: Upload CI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MotifX-0.2.0-dev.2-forge-1.20.1
+          name: MotifX-0.2.0-dev.3-forge-1.20.1
           path: motifx/build/release/*
           if-no-files-found: error
 
@@ -106,13 +109,13 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          TAG='motifx-0.2.0-dev.2'
+          TAG='motifx-0.2.0-dev.3'
           gh release delete "$TAG" -y --cleanup-tag >/dev/null 2>&1 || true
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
-            --title 'MotifX 0.2.0-dev.2' \
-            --notes 'Development build: Forge 1.20.1 / Forge 47.4.10 / Java 17. Adds clean numeric Bedrock/GeckoLib-style animation import and server-side runtime self-test. Published only after JUnit, ForgeGradle build, JAR verification and dedicated-server smoke test.' \
+            --title 'MotifX 0.2.0-dev.3' \
+            --notes 'Development build: Minecraft 1.20.1 exactly / Forge 47.x minimum 47.4.10 / Java 17. Adds clean numeric Bedrock/GeckoLib-style animation import, stricter metadata compatibility and server-side runtime self-test. Published only after JUnit, ForgeGradle build, JAR verification and dedicated-server smoke test.' \
             --prerelease \
-            motifx/build/release/MotifX-0.2.0-dev.2-forge-1.20.1.jar \
-            motifx/build/release/MotifX-0.2.0-dev.2-SOURCE.zip \
+            motifx/build/release/MotifX-0.2.0-dev.3-forge-1.20.1.jar \
+            motifx/build/release/MotifX-0.2.0-dev.3-SOURCE.zip \
             motifx/build/release/SHA256SUMS.txt

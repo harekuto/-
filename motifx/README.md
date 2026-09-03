@@ -4,12 +4,14 @@ MotifX is an experimental Forge 1.20.1 motion/runtime library focused on composa
 
 ## Verified target
 
-- Minecraft 1.20.1
-- Forge 47.4.10
+- Minecraft **1.20.1 exactly**
+- Forge **47.x**, minimum tested/built version **47.4.10**
 - Java 17
 - Mojang official mappings
 
-## Implemented in dev.2
+The metadata intentionally does not claim binary compatibility with Minecraft 1.20.2/1.20.4/1.21. Those versions require separately compiled and tested platform/version targets.
+
+## Implemented in dev.3
 
 - deterministic skeletal pose runtime and quaternion SLERP
 - loop/hold/ping-pong playback and event markers
@@ -21,7 +23,7 @@ MotifX is an experimental Forge 1.20.1 motion/runtime library focused on composa
 - channel-mapper hook for model/loader coordinate-convention adapters
 - explicit diagnostics for unsupported Molang/expression keyframes instead of pretending they work
 - structured validation, runtime metrics and an F8 client inspector
-- dedicated-server-safe common bootstrap
+- dedicated-server-safe common bootstrap and server-side runtime self-test
 
 ## Important limits
 
