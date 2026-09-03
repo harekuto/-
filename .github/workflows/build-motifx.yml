@@ -1,0 +1,114 @@
+name: Build MotifX
+
+on:
+  push:
+    branches:
+      - motifx-0.2.0-dev
+    paths:
+      - 'motifx/**'
+      - '.github/workflows/build-motifx.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.8
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Static source and resource checks
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f motifx/build.gradle
+          test -f motifx/src/main/resources/META-INF/mods.toml
+          test -f motifx/src/main/java/dev/harekuto/motifx/MotifX.java
+          python3 - <<'PY'
+          import json, pathlib
+          for p in pathlib.Path('motifx/src/main/resources').rglob('*.json'):
+              json.loads(p.read_text(encoding='utf-8'))
+          json.loads(pathlib.Path('motifx/src/main/resources/pack.mcmeta').read_text(encoding='utf-8'))
+          PY
+          ! grep -R --line-number --fixed-string 'catch (Throwable' motifx/src/main/java
+          ! grep -R --line-number -E 'm_[0-9]{3,}_' motifx/src/main/java
+          ! grep -R --line-number --fixed-string 'System.out.' motifx/src/main/java
+          ! grep -R --line-number -E '(api[_-]?key|token|password)[[:space:]]*=' motifx --exclude='build-motifx.yml'
+
+      - name: Clean test and Forge build
+        working-directory: motifx
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle --no-daemon clean test build --stacktrace
+
+      - name: Verify production JAR
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p motifx/build/release
+          JAR="$(find motifx/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -n1)"
+          test -n "$JAR"
+          unzip -t "$JAR"
+          OUT='motifx/build/release/MotifX-0.2.0-dev.1-forge-1.20.1.jar'
+          cp "$JAR" "$OUT"
+          unzip -p "$OUT" META-INF/mods.toml | grep -q 'modId="motifx"'
+          unzip -l "$OUT" | grep -q 'dev/harekuto/motifx/api/animation/AnimationRuntime'
+          unzip -l "$OUT" | grep -q 'dev/harekuto/motifx/client/screen/MotifInspectorScreen'
+          unzip -l "$OUT" | grep -q 'assets/motifx/lang/en_us.json'
+          git archive --format=zip --output='motifx/build/release/MotifX-0.2.0-dev.1-SOURCE.zip' "$GITHUB_SHA" motifx
+          sha256sum motifx/build/release/MotifX-0.2.0-dev.1-forge-1.20.1.jar motifx/build/release/MotifX-0.2.0-dev.1-SOURCE.zip | tee motifx/build/release/SHA256SUMS.txt
+
+      - name: Dedicated server smoke test
+        working-directory: motifx
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p run
+          printf 'eula=true\n' > run/eula.txt
+          set +e
+          timeout --signal=INT 180s gradle --no-daemon runServer
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -ne 0 ] && [ "$STATUS" -ne 124 ] && [ "$STATUS" -ne 130 ]; then exit "$STATUS"; fi
+          test -f run/logs/latest.log
+          grep -q 'MotifX 0.2.0-dev.1 initialized' run/logs/latest.log
+          grep -q 'MotifX dedicated/common runtime ready' run/logs/latest.log
+          ! grep -E 'NoClassDefFoundError|ExceptionInInitializerError|ModLoadingException' run/logs/latest.log
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MotifX-0.2.0-dev.1-forge-1.20.1
+          path: motifx/build/release/*
+          if-no-files-found: error
+
+      - name: Publish development release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TAG='motifx-0.2.0-dev.1'
+          gh release delete "$TAG" -y --cleanup-tag >/dev/null 2>&1 || true
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title 'MotifX 0.2.0-dev.1' \
+            --notes 'Development build: Forge 1.20.1 / Forge 47.4.10 / Java 17. Built only after unit tests, JAR verification and dedicated-server smoke test.' \
+            --prerelease \
+            motifx/build/release/MotifX-0.2.0-dev.1-forge-1.20.1.jar \
+            motifx/build/release/MotifX-0.2.0-dev.1-SOURCE.zip \
+            motifx/build/release/SHA256SUMS.txt

@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "clips": {
+    "demo": {
+      "duration": 1.0,
+      "description": "Minimal MotifX-format document used by development validation."
+    }
+  }
+}
