@@ -9,7 +9,7 @@ import java.util.function.Consumer;
 
 /** Immutable compiled animation clip. */
 public final class AnimationClip {
-    private static final int MAX_EVENT_LOOPS_PER_ADVANCE = 8;
+    private static final int MAX_EVENT_CYCLES_PER_ADVANCE = 8;
 
     private final String name;
     private final float duration;
@@ -64,36 +64,62 @@ public final class AnimationClip {
         }
     }
 
+    /** Dispatches markers for forward playback. Large time jumps are bounded to the newest eight cycles. */
     public void dispatchForwardMarkers(float previousRawTime, float currentRawTime,
                                        Consumer<AnimationEventMarker> consumer) {
         Objects.requireNonNull(consumer, "consumer");
-        if (events.isEmpty() || currentRawTime <= previousRawTime) return;
+        if (events.isEmpty() || !Float.isFinite(previousRawTime) || !Float.isFinite(currentRawTime)
+                || currentRawTime <= previousRawTime) return;
 
-        if (loopMode != LoopMode.LOOP) {
-            float start = Math.max(0.0f, previousRawTime);
-            float end = Math.min(duration, currentRawTime);
-            dispatchRange(start, end, consumer);
-            return;
-        }
-
-        long startLoop = (long) Math.floor(previousRawTime / duration);
-        long endLoop = (long) Math.floor(currentRawTime / duration);
-        if (endLoop - startLoop > MAX_EVENT_LOOPS_PER_ADVANCE) {
-            startLoop = endLoop - MAX_EVENT_LOOPS_PER_ADVANCE;
-        }
-        for (long loop = startLoop; loop <= endLoop; loop++) {
-            float loopBase = loop * duration;
-            float start = Math.max(0.0f, previousRawTime - loopBase);
-            float end = Math.min(duration, currentRawTime - loopBase);
-            if (end > start) dispatchRange(start, end, consumer);
+        switch (loopMode) {
+            case ONCE, HOLD -> dispatchRange(Math.max(0.0f, previousRawTime), Math.min(duration, currentRawTime), consumer);
+            case LOOP -> dispatchLoopMarkers(previousRawTime, currentRawTime, consumer);
+            case PING_PONG -> dispatchPingPongMarkers(previousRawTime, currentRawTime, consumer);
         }
     }
 
-    private void dispatchRange(float startExclusive, float endInclusive, Consumer<AnimationEventMarker> consumer) {
-        for (AnimationEventMarker event : events) {
-            if (event.time() > startExclusive && event.time() <= endInclusive) {
-                consumer.accept(event);
+    private void dispatchLoopMarkers(float previous, float current, Consumer<AnimationEventMarker> consumer) {
+        long firstCycle = (long) Math.floor(previous / duration);
+        long lastCycle = (long) Math.floor(current / duration);
+        firstCycle = boundedFirstCycle(firstCycle, lastCycle);
+        for (long cycle = firstCycle; cycle <= lastCycle; cycle++) {
+            double base = cycle * (double) duration;
+            for (AnimationEventMarker event : events) {
+                double absolute = base + event.time();
+                if (absolute > previous && absolute <= current) consumer.accept(event);
             }
+        }
+    }
+
+    private void dispatchPingPongMarkers(float previous, float current, Consumer<AnimationEventMarker> consumer) {
+        double cycleLength = duration * 2.0;
+        long firstCycle = (long) Math.floor(previous / cycleLength);
+        long lastCycle = (long) Math.floor(current / cycleLength);
+        firstCycle = boundedFirstCycle(firstCycle, lastCycle);
+        for (long cycle = firstCycle; cycle <= lastCycle; cycle++) {
+            double base = cycle * cycleLength;
+            for (AnimationEventMarker event : events) {
+                double forward = base + event.time();
+                if (forward > previous && forward <= current) consumer.accept(event);
+                if (event.time() > 0.0f && event.time() < duration) {
+                    double backward = base + cycleLength - event.time();
+                    if (backward > previous && backward <= current) consumer.accept(event);
+                }
+            }
+        }
+    }
+
+    private long boundedFirstCycle(long firstCycle, long lastCycle) {
+        if (lastCycle - firstCycle >= MAX_EVENT_CYCLES_PER_ADVANCE) {
+            return lastCycle - MAX_EVENT_CYCLES_PER_ADVANCE + 1;
+        }
+        return firstCycle;
+    }
+
+    private void dispatchRange(float startExclusive, float endInclusive, Consumer<AnimationEventMarker> consumer) {
+        if (endInclusive <= startExclusive) return;
+        for (AnimationEventMarker event : events) {
+            if (event.time() > startExclusive && event.time() <= endInclusive) consumer.accept(event);
         }
     }
 

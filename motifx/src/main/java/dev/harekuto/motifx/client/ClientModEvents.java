@@ -31,8 +31,12 @@ public final class ClientModEvents {
         public static void onClientTick(TickEvent.ClientTickEvent event) {
             if (event.phase != TickEvent.Phase.END) return;
             Minecraft minecraft = Minecraft.getInstance();
-            if (minecraft.player != null && INSPECTOR.consumeClick()) {
-                minecraft.setScreen(new MotifInspectorScreen());
+            while (INSPECTOR.consumeClick()) {
+                if (minecraft.screen instanceof MotifInspectorScreen) {
+                    minecraft.setScreen(null);
+                } else if (minecraft.player != null) {
+                    minecraft.setScreen(new MotifInspectorScreen());
+                }
             }
         }
     }

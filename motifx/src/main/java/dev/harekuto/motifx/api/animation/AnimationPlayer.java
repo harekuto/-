@@ -26,7 +26,9 @@ public final class AnimationPlayer {
     }
 
     public void setSpeed(float speed) {
-        if (!Float.isFinite(speed)) throw new IllegalArgumentException("Animation speed must be finite");
+        if (!Float.isFinite(speed) || speed < 0.0f) {
+            throw new IllegalArgumentException("Animation speed must be finite and >= 0 in MotifX 0.1.x");
+        }
         this.speed = speed;
     }
 

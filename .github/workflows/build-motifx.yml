@@ -34,6 +34,7 @@ jobs:
           test -f motifx/build.gradle
           test -f motifx/src/main/resources/META-INF/mods.toml
           test "$(find motifx/src/main/java -name '*.java' | wc -l)" -ge 20
+          test "$(find motifx/src/test/java -name '*Test.java' | wc -l)" -ge 6
           ! grep -R --line-number --fixed-string 'catch (Throwable' motifx/src/main/java
           ! grep -R --line-number --fixed-string 'System.out.' motifx/src/main/java
           python3 -m json.tool motifx/src/main/resources/assets/motifx/lang/en_us.json >/dev/null
@@ -70,15 +71,25 @@ jobs:
           set -euxo pipefail
           mkdir -p run
           printf 'eula=true\n' > run/eula.txt
-          set +e
-          timeout 150s gradle --no-daemon runServer > server-smoke.log 2>&1
-          CODE=$?
-          set -e
+          : > server-smoke.log
+          gradle --no-daemon runServer > server-smoke.log 2>&1 &
+          SERVER_PID=$!
+          FOUND=0
+          for _ in $(seq 1 90); do
+            if grep -q 'MotifX 0.1.0 initialized' server-smoke.log; then FOUND=1; break; fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then break; fi
+            sleep 2
+          done
           tail -n 180 server-smoke.log
-          grep -q 'MotifX 0.1.0 initialized' server-smoke.log
+          if [ "$FOUND" -ne 1 ]; then
+            kill "$SERVER_PID" 2>/dev/null || true
+            wait "$SERVER_PID" 2>/dev/null || true
+            exit 1
+          fi
           ! grep -q 'NoClassDefFoundError' server-smoke.log
-          ! grep -q 'InvalidDist' server-smoke.log
-          if [ "$CODE" -ne 0 ] && [ "$CODE" -ne 124 ]; then exit "$CODE"; fi
+          ! grep -qi 'invalid dist' server-smoke.log
+          kill "$SERVER_PID" 2>/dev/null || true
+          wait "$SERVER_PID" 2>/dev/null || true
 
       - name: Upload production artifacts
         uses: actions/upload-artifact@v4

@@ -18,8 +18,16 @@ public record Vec3f(float x, float y, float z) {
         return new Vec3f(x + other.x, y + other.y, z + other.z);
     }
 
+    public Vec3f subtract(Vec3f other) {
+        return new Vec3f(x - other.x, y - other.y, z - other.z);
+    }
+
     public Vec3f multiply(float scalar) {
         return new Vec3f(x * scalar, y * scalar, z * scalar);
+    }
+
+    public Vec3f multiply(Vec3f other) {
+        return new Vec3f(x * other.x, y * other.y, z * other.z);
     }
 
     public boolean isFinite() {
@@ -27,6 +35,7 @@ public record Vec3f(float x, float y, float z) {
     }
 
     public static float clamp01(float value) {
+        if (!Float.isFinite(value)) return 0.0f;
         return Math.max(0.0f, Math.min(1.0f, value));
     }
 }

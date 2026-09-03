@@ -32,15 +32,24 @@ public record Quatf(float x, float y, float z, float w) {
     }
 
     public Quatf normalized() {
-        if (!isFinite()) {
-            return IDENTITY;
-        }
-        float lengthSquared = x * x + y * y + z * z + w * w;
-        if (lengthSquared < EPSILON) {
-            return IDENTITY;
-        }
+        if (!isFinite()) return IDENTITY;
+        float lengthSquared = lengthSquared();
+        if (lengthSquared < EPSILON) return IDENTITY;
         float inv = 1.0f / (float) Math.sqrt(lengthSquared);
         return new Quatf(x * inv, y * inv, z * inv, w * inv);
+    }
+
+    public Quatf conjugated() {
+        return new Quatf(-x, -y, -z, w);
+    }
+
+    public Quatf inverse() {
+        if (!isFinite()) return IDENTITY;
+        float lengthSquared = lengthSquared();
+        if (lengthSquared < EPSILON) return IDENTITY;
+        Quatf conjugate = conjugated();
+        float inv = 1.0f / lengthSquared;
+        return new Quatf(conjugate.x * inv, conjugate.y * inv, conjugate.z * inv, conjugate.w * inv);
     }
 
     public Quatf negated() {
@@ -85,5 +94,9 @@ public record Quatf(float x, float y, float z, float w) {
 
     public boolean isFinite() {
         return Float.isFinite(x) && Float.isFinite(y) && Float.isFinite(z) && Float.isFinite(w);
+    }
+
+    private float lengthSquared() {
+        return x * x + y * y + z * z + w * w;
     }
 }

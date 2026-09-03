@@ -40,7 +40,7 @@ public final class MotifInspectorScreen extends Screen {
         y += 15;
         graphics.drawString(font, Component.literal("Skeleton • Clip • Layers • State Graph • Validator • JSON v1"), x, y, 0xFFD5D7DF, false);
         y += 24;
-        graphics.drawString(font, Component.literal("F8 closes/opens inspector. ESC closes this screen."), x, y, 0xFF8F95A8, false);
+        graphics.drawString(font, Component.literal("F8 toggles inspector. ESC also closes it."), x, y, 0xFF8F95A8, false);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 

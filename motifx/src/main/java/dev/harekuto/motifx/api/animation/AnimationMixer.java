@@ -1,5 +1,6 @@
 package dev.harekuto.motifx.api.animation;
 
+import dev.harekuto.motifx.api.math.Quatf;
 import dev.harekuto.motifx.api.math.Vec3f;
 
 import java.util.List;
@@ -7,6 +8,8 @@ import java.util.Objects;
 
 /** Stateless layered pose mixer. Scratch poses are supplied by the caller to avoid hidden allocations. */
 public final class AnimationMixer {
+    private static final float SCALE_EPSILON = 1.0e-6f;
+
     public record Layer(AnimationClip clip, float time, float weight, BoneMask mask, boolean additive) {
         public Layer {
             Objects.requireNonNull(clip, "clip");
@@ -32,18 +35,32 @@ public final class AnimationMixer {
                 if (!layer.mask().includes(bone)) continue;
                 Transform current = output.get(bone);
                 Transform sampled = scratch.get(bone);
-                if (layer.additive()) {
-                    Transform bind = skeleton.bone(bone).bindPose();
-                    Transform additiveTarget = new Transform(
-                            current.translation().add(sampled.translation().add(bind.translation().multiply(-1.0f)).multiply(weight)),
-                            current.rotation().slerp(current.rotation().multiply(bind.rotation().normalized().negated()).multiply(sampled.rotation()).normalized(), weight),
-                            current.scale().lerp(sampled.scale(), weight)
-                    );
-                    output.set(bone, additiveTarget);
-                } else {
-                    output.set(bone, current.blend(sampled, weight));
-                }
+                output.set(bone, layer.additive()
+                        ? applyAdditive(current, sampled, skeleton.bone(bone).bindPose(), weight)
+                        : current.blend(sampled, weight));
             }
         }
+    }
+
+    private static Transform applyAdditive(Transform current, Transform sampled, Transform bind, float weight) {
+        Vec3f translationDelta = sampled.translation().subtract(bind.translation());
+        Vec3f translation = current.translation().add(translationDelta.multiply(weight));
+
+        Quatf rotationDelta = bind.rotation().inverse().multiply(sampled.rotation()).normalized();
+        Quatf weightedRotationDelta = Quatf.IDENTITY.slerp(rotationDelta, weight);
+        Quatf rotation = current.rotation().multiply(weightedRotationDelta).normalized();
+
+        Vec3f scaleRatio = new Vec3f(
+                safeRatio(sampled.scale().x(), bind.scale().x()),
+                safeRatio(sampled.scale().y(), bind.scale().y()),
+                safeRatio(sampled.scale().z(), bind.scale().z())
+        );
+        Vec3f weightedScaleRatio = Vec3f.ONE.lerp(scaleRatio, weight);
+        Vec3f scale = current.scale().multiply(weightedScaleRatio);
+        return new Transform(translation, rotation, scale);
+    }
+
+    private static float safeRatio(float sampled, float bind) {
+        return Math.abs(bind) < SCALE_EPSILON ? 1.0f : sampled / bind;
     }
 }

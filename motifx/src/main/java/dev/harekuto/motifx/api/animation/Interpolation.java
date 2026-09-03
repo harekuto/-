@@ -24,6 +24,7 @@ public enum Interpolation {
     public abstract float apply(float alpha);
 
     private static float clamp(float value) {
+        if (!Float.isFinite(value)) return 0.0f;
         return Math.max(0.0f, Math.min(1.0f, value));
     }
 }

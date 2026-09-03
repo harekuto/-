@@ -16,19 +16,29 @@ public final class ParameterStore {
     public ParameterLayout layout() { return layout; }
 
     public float get(ParameterLayout.FloatParam parameter) {
+        requireLayout(parameter.layoutId(), parameter.name());
         return floats[parameter.index()];
     }
 
     public void set(ParameterLayout.FloatParam parameter, float value) {
+        requireLayout(parameter.layoutId(), parameter.name());
         if (!Float.isFinite(value)) throw new IllegalArgumentException("Float parameter must be finite: " + parameter.name());
         floats[parameter.index()] = value;
     }
 
     public boolean get(ParameterLayout.BoolParam parameter) {
+        requireLayout(parameter.layoutId(), parameter.name());
         return bools[parameter.index()];
     }
 
     public void set(ParameterLayout.BoolParam parameter, boolean value) {
+        requireLayout(parameter.layoutId(), parameter.name());
         bools[parameter.index()] = value;
+    }
+
+    private void requireLayout(int layoutId, String parameterName) {
+        if (layoutId != layout.id()) {
+            throw new IllegalArgumentException("Parameter '" + parameterName + "' belongs to another ParameterLayout");
+        }
     }
 }
