@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "name": "demo_wave",
+  "duration": 1.0,
+  "loop": "loop",
+  "bones": {
+    "right_arm": {
+      "rotation": [
+        {"time": 0.0, "euler_deg": [0.0, 0.0, -15.0], "interpolation": "smoothstep"},
+        {"time": 0.5, "euler_deg": [0.0, 0.0, 55.0], "interpolation": "smoothstep"},
+        {"time": 1.0, "euler_deg": [0.0, 0.0, -15.0], "interpolation": "smoothstep"}
+      ]
+    }
+  },
+  "events": [
+    {"id": "wave_peak", "time": 0.5}
+  ]
+}
