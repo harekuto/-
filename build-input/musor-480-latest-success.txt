@@ -1,0 +1,4 @@
+run_id=33785729770
+head_sha=dc8966f32ec9e4f503ef3d6cd08f7436c148fccc
+artifact=Musor-Drop-4.8.0-Forge-1.20.1-Premium-UI-V2
+2a681165c1de49e0d32ed293d43af183e87122fb8edfd6f95659f198da3ec8d9  musor-drop/build/libs/Musor-Drop-4.8.0-Forge-1.20.1-Premium-UI-V2.jar
