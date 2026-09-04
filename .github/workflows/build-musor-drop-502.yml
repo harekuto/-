@@ -1,0 +1,143 @@
+name: Build Musor Drop 5.0.2 Lossless Pending Rewards
+
+on:
+  push:
+    branches: [ musor-5.0.0-professional-redesign ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct verified 5.0.1 baseline and apply 5.0.2 batch
+        shell: bash
+        run: bash build-input/reconstruct_502.sh
+
+      - name: Static source, geometry, security and persistence audit
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ! grep -R --line-number --fixed-string 'catch (Throwable' musor-drop/src/main/java
+          ! grep -R --line-number -E 'm_[0-9]{3,}_' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'System.out.' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'Runtime.exec' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'ProcessBuilder' musor-drop/src/main/java
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,re
+          root=Path('musor-drop/src/main/resources'); jc=pc=0
+          for p in root.rglob('*.json'):
+              json.loads(p.read_text(encoding='utf-8')); jc+=1
+          for p in root.rglob('*.png'):
+              d=p.read_bytes(); assert d[:8]==b'\x89PNG\r\n\x1a\n',p; pc+=1
+          station=Path('musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java').read_text()
+          cases=Path('musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java').read_text()
+          screen=Path('musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java').read_text()
+          network=Path('musor-drop/src/main/java/net/execheinz/upgrader/network/ModNetwork.java').read_text()
+          pending=Path('musor-drop/src/main/java/net/execheinz/upgrader/economy/PendingRewardService.java').read_text()
+          def c(t,n):
+              m=re.search(rf'{n}\s*=\s*(\d+)',t); assert m,n; return int(m.group(1))
+          W,H=c(station,'GUI_W'),c(station,'GUI_H')
+          ix,iy,hy=[c(station,n) for n in ('INVENTORY_X','INVENTORY_Y','HOTBAR_Y')]
+          gx,gy,cw,ch,dx,dy=[c(cases,n) for n in ('GRID_X','GRID_Y','CARD_W','CARD_H','GAP_X','GAP_Y')]
+          assert (W,H)==(360,252) and W*4<=1440 and H*4<=1024
+          assert ix+9*18<=W-8 and iy+3*18<=hy and hy+19<=H
+          assert gx+3*cw+2*dx<=W-12 and gy+2*ch+dy<151
+          assert network.count('NetworkDirection.PLAY_TO_SERVER')==2
+          assert network.count('NetworkDirection.PLAY_TO_CLIENT')==1
+          assert 'MAX_PENDING' not in pending and 'WARN_PENDING' in pending
+          queue=pending.split('public static void queue',1)[1].split('public static void flush',1)[0]
+          flush=pending.split('public static void flush',1)[1].split('/** Mutates stack',1)[0]
+          assert 'player.drop(stack.copy(), false)' not in queue
+          assert 'Unreadable pending Musor Drop reward entry was discarded' not in flush
+          assert 'CompoundTag original = list.getCompound(i).copy();' in flush
+          assert flush.count('keep.add(original);')==2
+          assert 'preserved for a later retry' in flush
+          assert 'preservedTargetQuery' in screen and 'preservedCaseQuery' in screen
+          assert 'cachedTargetCatalog' in screen and 'previousTarget' in screen
+          icon=root/'assets/musordrop/textures/item/station.png'
+          assert hashlib.sha256(icon.read_bytes()).hexdigest()=='8592926b2dfc70cc758998ec457bffc1542a2abf212c3aa091c74665631836e8'
+          print('RESOURCE_SECURITY_PERSISTENCE_GEOMETRY_502_OK',jc,pc,W,H)
+          PY
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Build and test
+        working-directory: musor-drop
+        run: gradle --no-daemon clean test build --stacktrace
+
+      - name: Collect tests, verify production jar and source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          fs=list(Path('musor-drop/build/test-results/test').glob('TEST-*.xml')); assert fs
+          t=f=e=s=0
+          for p in fs:
+              r=ET.parse(p).getroot(); t+=int(r.attrib.get('tests',0)); f+=int(r.attrib.get('failures',0)); e+=int(r.attrib.get('errors',0)); s+=int(r.attrib.get('skipped',0))
+          print('JUNIT_TOTAL',t,'FAILURES',f,'ERRORS',e,'SKIPPED',s); assert t>=12000 and f==0 and e==0
+          Path('musor-drop/build/test-count.txt').write_text(f'JUnit tests: {t}\nFailures: {f}\nErrors: {e}\nSkipped: {s}\n')
+          PY
+          JAR="$(find musor-drop/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -n1)"
+          FINAL='musor-drop/build/libs/Musor-Drop-5.0.2-Forge-1.20.1-Lossless-Pending-Rewards.jar'
+          test -n "$JAR"; cp "$JAR" "$FINAL"; unzip -tq "$FINAL"
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'modId="musordrop"'
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'displayName="Musor Drop"'
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'version="5.0.2"'
+          python3 - <<'PY'
+          import hashlib,json,re,struct,zipfile
+          from pathlib import Path
+          jar=Path('musor-drop/build/libs/Musor-Drop-5.0.2-Forge-1.20.1-Lossless-Pending-Rewards.jar'); bad=[]; cl=js=pn=cm=ct=0
+          secret=re.compile(rb'(BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY|api[_-]?key\s*[=:])',re.I)
+          with zipfile.ZipFile(jar) as z:
+              names=set(z.namelist())
+              for n in z.namelist():
+                  d=z.read(n)
+                  if n.endswith('.class'):
+                      cl+=1
+                      if d[:4]!=b'\xca\xfe\xba\xbe' or struct.unpack('>H',d[6:8])[0]!=61: bad.append((n,'class-version'))
+                  elif n.endswith('.json'): json.loads(d.decode()); js+=1
+                  elif n.endswith('.png'):
+                      pn+=1
+                      if d[:8]!=b'\x89PNG\r\n\x1a\n': bad.append((n,'png'))
+                  if '/models/item/case_models/' in n and n.endswith('.json'): cm+=1
+                  if '/textures/item/cases/' in n and n.endswith('.png'): ct+=1
+                  if secret.search(d): bad.append((n,'secret'))
+              required={'assets/musordrop/models/item/station.json','assets/musordrop/models/item/case_display.json','assets/musordrop/textures/item/station.png','data/musordrop/recipes/station.json','net/execheinz/upgrader/client/screen/UpgraderScreen.class','net/execheinz/upgrader/economy/PendingRewardService.class','net/execheinz/upgrader/network/ModNetwork.class'}
+              for r in required:
+                  if r not in names: bad.append((r,'missing'))
+              if hashlib.sha256(z.read('assets/musordrop/textures/item/station.png')).hexdigest()!='8592926b2dfc70cc758998ec457bffc1542a2abf212c3aa091c74665631836e8': bad.append(('station.png','hash'))
+              junk=re.compile(r'(^|/)(src|stubs|test-classes|\.gradle|logs|crash-reports|__pycache__|\.env)(/|$)')
+              for n in names:
+                  if junk.search(n): bad.append((n,'junk'))
+          print('JAR_AUDIT_502',cl,js,pn,cm,ct,bad); assert cl>=35 and cm==29 and ct==29 and not bad
+          PY
+          sha256sum "$FINAL" | tee musor-drop/build/libs/SHA256SUMS.txt
+          (cd musor-drop && zip -qr build/Musor-Drop-5.0.2-SOURCE.zip src build.gradle gradle.properties settings.gradle)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Musor-Drop-5.0.2-Forge-1.20.1-Lossless-Pending-Rewards
+          path: |
+            musor-drop/build/libs/Musor-Drop-5.0.2-Forge-1.20.1-Lossless-Pending-Rewards.jar
+            musor-drop/build/libs/SHA256SUMS.txt
+            musor-drop/build/test-count.txt
+            musor-drop/build/Musor-Drop-5.0.2-SOURCE.zip
+          if-no-files-found: error
