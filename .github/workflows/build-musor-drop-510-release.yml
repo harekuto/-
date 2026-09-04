@@ -50,8 +50,8 @@ jobs:
           test -z "$(find musor-drop -name '*.rej' -print)"
 
           TEST='musor-drop/src/test/java/net/execheinz/upgrader/client/screen/CaseLayoutTest.java'
-          sed -i 's/bottom <= 170/bottom <= 172/' "$TEST"
-          grep -q 'bottom <= 172' "$TEST"
+          sed -i 's/<= 170/<= 172/' "$TEST"
+          grep -q '<= 172' "$TEST"
 
           cat build-input/case-textures-510.part*.b64 | base64 -d > /tmp/case510.zip
           unzip -tq /tmp/case510.zip
