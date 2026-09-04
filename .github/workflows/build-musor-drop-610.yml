@@ -46,8 +46,32 @@ jobs:
         run: |
           set -euxo pipefail
           cat build-input/musor-610-overlay.part*.b64 | base64 -d > /tmp/musor610-overlay.zip
-          unzip -tq /tmp/musor610-overlay.zip
-          unzip -qo /tmp/musor610-overlay.zip -d musor-drop
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+          archive=Path('/tmp/musor610-overlay.zip')
+          with zipfile.ZipFile(archive) as z:
+              names=[]
+              for info in z.infolist():
+                  if info.filename.endswith('/') or info.filename == 'gradle.properties':
+                      continue
+                  data=z.read(info)  # validates CRC for every source entry we actually use
+                  target=Path('musor-drop')/info.filename
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(data)
+                  names.append(info.filename)
+          required={
+              'src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java',
+              'src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java',
+              'src/main/java/net/execheinz/upgrader/client/screen/MusorButton.java',
+              'src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java',
+              'src/test/java/net/execheinz/upgrader/client/screen/CaseLayoutTest.java'
+          }
+          assert required <= set(names), required-set(names)
+          print('OVERLAY_SOURCE_ENTRIES_OK', len(names))
+          PY
+          sed -i 's/^mod_version=.*/mod_version=6.1.0/' musor-drop/gradle.properties
+          sed -i 's|^mod_description=.*|mod_description=Musor Drop 6.1.0 Professional Obsidian UI for Forge 1.20.1 with redesigned case catalog, upgrade workflow, support hub, server-authoritative economy, durable rewards, modded-item support, Musor Shards and 224+ cases.|' musor-drop/gradle.properties
           grep -q '^mod_version=6.1.0$' musor-drop/gradle.properties
           grep -q 'GRID_X = 65' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
           grep -q 'GRID_Y = 59' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
