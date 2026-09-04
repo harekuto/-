@@ -27,7 +27,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p project mindsight-build/artifact
-          cat mindsight-build/source.b64.part* | base64 --decode > mindsight-build/Mindsight-0.4.0-PRODUCTION-SOURCE.zip
+          wc -c mindsight-build/source.b64.part*
+          sha256sum mindsight-build/source.b64.part*
+          cat mindsight-build/source.b64.part* | tr -d '[:space:]' | base64 --decode > mindsight-build/Mindsight-0.4.0-PRODUCTION-SOURCE.zip
           echo 'b1b1d47a7657c6c608f113f181e1fe3e235d218c4a05d443d1c257922bf11e01  mindsight-build/Mindsight-0.4.0-PRODUCTION-SOURCE.zip' | sha256sum -c -
           unzip -t mindsight-build/Mindsight-0.4.0-PRODUCTION-SOURCE.zip
           unzip -q mindsight-build/Mindsight-0.4.0-PRODUCTION-SOURCE.zip -d project
