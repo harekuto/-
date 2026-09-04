@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - mindsight-build-run26-20260904
+    paths:
+      - mindsight-build/READY
 
 permissions:
   contents: read
