@@ -1,0 +1,54 @@
+--- a/app/src/main/java/com/chronyx/browser/mobile/UrlResolver.java
++++ b/app/src/main/java/com/chronyx/browser/mobile/UrlResolver.java
+@@ -1,8 +1,6 @@
+ package com.chronyx.browser.mobile;
+ 
+ import android.net.Uri;
+-import java.net.URLEncoder;
+-import java.nio.charset.StandardCharsets;
+ import java.util.Locale;
+ import java.util.regex.Pattern;
+@@ -54,6 +52,6 @@
+     }
+ 
+     private static String search(String query) {
+-        return "https://duckduckgo.com/?q=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
++        return "https://duckduckgo.com/?q=" + Uri.encode(query);
+     }
+ }
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -3,6 +3,7 @@
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+     <uses-permission android:name="android.permission.CAMERA" />
+     <uses-permission android:name="android.permission.RECORD_AUDIO" />
++    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+ 
+--- a/app/src/main/res/values/styles.xml
++++ b/app/src/main/res/values/styles.xml
+@@ -7,7 +7,6 @@
+         <item name="android:navigationBarColor">@color/chronyx_bg</item>
+         <item name="android:statusBarColor">@android:color/transparent</item>
+         <item name="android:windowLightStatusBar">false</item>
+-        <item name="android:windowLightNavigationBar">false</item>
+         <item name="android:windowBackground">@color/chronyx_bg</item>
+     </style>
+ </resources>
+--- /dev/null
++++ b/app/src/main/res/values-v27/styles.xml
+@@ -0,0 +1,13 @@
++<resources>
++    <style name="Theme.Chronyx" parent="android:style/Theme.Material.NoActionBar">
++        <item name="android:fontFamily">sans</item>
++        <item name="android:windowActionModeOverlay">true</item>
++        <item name="android:windowNoTitle">true</item>
++        <item name="android:colorAccent">@color/chronyx_accent</item>
++        <item name="android:navigationBarColor">@color/chronyx_bg</item>
++        <item name="android:statusBarColor">@android:color/transparent</item>
++        <item name="android:windowLightStatusBar">false</item>
++        <item name="android:windowLightNavigationBar">false</item>
++        <item name="android:windowBackground">@color/chronyx_bg</item>
++    </style>
++</resources>
