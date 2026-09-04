@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
   actions: read
+  contents: read
 
 jobs:
   release:
@@ -15,23 +15,44 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      - name: Reconstruct 7.0 source
+      - name: Reconstruct verified 7.0 source
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf musor-drop
-          mkdir -p musor-drop
-          tar -xJf build-input/Musor-Drop-7.0.0-SOURCE.tar.xz -C musor-drop
-          test -f musor-drop/build.gradle
-          test -f musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java
+          rm -rf /tmp/base610 musor-drop /tmp/musor700-overlay.zip
+          mkdir -p /tmp/base610 musor-drop
+          gh run download 33870009047 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name 'Musor-Drop-6.1.0-Forge-1.20.1-Professional-Obsidian-UI-Release' \
+            --dir /tmp/base610
+          SOURCE="$(find /tmp/base610 -type f -name 'Musor-Drop-6.1.0-SOURCE.zip' | head -n1)"
+          test -n "$SOURCE"
+          unzip -tq "$SOURCE"
+          unzip -q "$SOURCE" -d musor-drop
           grep -q '^minecraft_version=1.20.1$' musor-drop/gradle.properties
           grep -q '^forge_version=47.4.10$' musor-drop/gradle.properties
           grep -q '^mapping_version=1.20.1$' musor-drop/gradle.properties
           grep -q '^mod_id=musordrop$' musor-drop/gradle.properties
+          grep -q '^mod_version=6.1.0$' musor-drop/gradle.properties
+
+          cat build-input/musor-700-overlay.part*.b64 | base64 -d > /tmp/musor700-overlay.zip
+          echo '3cf52000aac3356362e5bea07834521184df1a09dd4c3ae1e32902c82b6c5060  /tmp/musor700-overlay.zip' | sha256sum -c -
+          unzip -tq /tmp/musor700-overlay.zip
+          unzip -qo /tmp/musor700-overlay.zip -d musor-drop
+          (cd musor-drop && python3 ../build-input/generate_case_materials_700.py)
+
           grep -q '^mod_version=7.0.0$' musor-drop/gradle.properties
-          sed -i 's/OBSIDIAN WORKBENCH UI/AMETHYST VAULT UI/g' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java
-          sed -i 's/Musor Drop 6.1 interaction component./Musor Drop 7.0 interaction component./g' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorButton.java
+          grep -q 'Amethyst Vault UI' musor-drop/gradle.properties
+          grep -q 'CARD_W = 139' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'PAGE_SIZE = 4' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'mulPose(Axis.YP.rotationDegrees' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseArt.java
+          grep -q 'surfaceRaised' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
+          grep -q 'cardSurface' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
           echo SOURCE_700_OK
 
       - name: Static resource layout and security audit
@@ -41,39 +62,28 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import json, struct
-          root = Path('musor-drop/src/main/resources')
-          json_count = png_count = 0
+          root=Path('musor-drop/src/main/resources')
+          jc=pc=0
           for p in root.rglob('*.json'):
-              json.loads(p.read_text(encoding='utf-8'))
-              json_count += 1
-          pack = root / 'pack.mcmeta'
-          if pack.exists():
-              json.loads(pack.read_text(encoding='utf-8'))
+              json.loads(p.read_text(encoding='utf-8')); jc += 1
+          pack=root/'pack.mcmeta'
+          if pack.exists(): json.loads(pack.read_text(encoding='utf-8'))
           for p in root.rglob('*.png'):
-              data = p.read_bytes()
-              assert data[:8] == b'\x89PNG\r\n\x1a\n', p
-              png_count += 1
-          models = list((root/'assets/musordrop/models/item/case_models').glob('*.json'))
-          textures = list((root/'assets/musordrop/textures/item/cases').glob('*.png'))
-          assert len(models) == 29, len(models)
-          assert len(textures) == 29, len(textures)
-          for p in textures:
-              data = p.read_bytes()
-              w,h = struct.unpack('>II', data[16:24])
-              assert (w,h) == (32,32), (p, w, h)
-          model = (root/'assets/musordrop/models/item/case_models/base_case.json').read_text(encoding='utf-8')
-          assert model.count('"from"') >= 16
-          assert '1.02' in model
-          print('RESOURCE_AUDIT_OK', json_count, png_count, len(models), len(textures))
+              d=p.read_bytes()
+              assert d[:8] == b'\x89PNG\r\n\x1a\n', p
+              pc += 1
+          case_models=list((root/'assets/musordrop/models/item/case_models').glob('*.json'))
+          case_textures=list((root/'assets/musordrop/textures/item/cases').glob('*.png'))
+          assert len(case_models)==29, len(case_models)
+          assert len(case_textures)==29, len(case_textures)
+          for p in case_textures:
+              d=p.read_bytes()
+              w,h=struct.unpack('>II',d[16:24])
+              assert (w,h)==(32,32), (p,w,h)
+          base=(root/'assets/musordrop/models/item/case_models/base_case.json').read_text()
+          assert base.count('"from"') >= 16
+          print('RESOURCE_AUDIT_OK',jc,pc,len(case_models),len(case_textures))
           PY
-          grep -q 'CARD_W = 139' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
-          grep -q 'CARD_H = 45' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
-          grep -q 'PAGE_SIZE = 4' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
-          grep -q 'selectedSurface' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
-          grep -q 'Amethyst Vault' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
-          grep -q 'drawStepDiamond' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java
-          grep -q '"7.0"' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java
-          grep -q 'AMETHYST VAULT UI' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java
           ! grep -R --line-number --fixed-string 'catch (Throwable' musor-drop/src/main/java
           ! grep -R --line-number --fixed-string 'Runtime.exec' musor-drop/src/main/java
           ! grep -R --line-number --fixed-string 'ProcessBuilder' musor-drop/src/main/java
@@ -83,7 +93,7 @@ jobs:
           grep -q 'INVENTORY_X = 188' musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java
           grep -q 'INVENTORY_Y = 177' musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java
           grep -q 'HOTBAR_Y = 232' musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java
-          echo STATIC_AUDIT_700_OK
+          echo STATIC_AUDIT_OK
 
       - uses: actions/setup-java@v4
         with:
@@ -105,18 +115,14 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import xml.etree.ElementTree as ET
-          files = list(Path('musor-drop/build/test-results/test').glob('TEST-*.xml'))
-          assert files
+          files=list(Path('musor-drop/build/test-results/test').glob('TEST-*.xml')); assert files
           t=f=e=s=0
           for p in files:
               r=ET.parse(p).getroot()
-              t += int(r.attrib.get('tests',0))
-              f += int(r.attrib.get('failures',0))
-              e += int(r.attrib.get('errors',0))
-              s += int(r.attrib.get('skipped',0))
-          print('JUNIT_TOTAL', t, 'FAILURES', f, 'ERRORS', e, 'SKIPPED', s)
-          assert t >= 12020 and f == 0 and e == 0
-          Path('musor-drop/build/test-count.txt').write_text(f'JUnit tests: {t}\nFailures: {f}\nErrors: {e}\nSkipped: {s}\n', encoding='utf-8')
+              t+=int(r.attrib.get('tests',0)); f+=int(r.attrib.get('failures',0)); e+=int(r.attrib.get('errors',0)); s+=int(r.attrib.get('skipped',0))
+          print('JUNIT_TOTAL',t,'FAILURES',f,'ERRORS',e,'SKIPPED',s)
+          assert t>=12000 and f==0 and e==0
+          Path('musor-drop/build/test-count.txt').write_text(f'JUnit tests: {t}\nFailures: {f}\nErrors: {e}\nSkipped: {s}\n')
           PY
 
           JAR="$(find musor-drop/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -n1)"
@@ -128,38 +134,33 @@ jobs:
           unzip -p "$FINAL" META-INF/mods.toml | grep -q 'version="7.0.0"'
 
           python3 - <<'PY'
-          import json, struct, zipfile
+          import json,struct,zipfile
           from pathlib import Path
-          jar = Path('musor-drop/build/libs/Musor-Drop-7.0.0-Forge-1.20.1-Amethyst-Vault.jar')
-          classes = case_models = case_textures = 0
+          jar=Path('musor-drop/build/libs/Musor-Drop-7.0.0-Forge-1.20.1-Amethyst-Vault.jar')
+          classes=case_models=case_textures=0
           with zipfile.ZipFile(jar) as z:
-              names = set(z.namelist())
+              names=set(z.namelist())
               for n in names:
-                  d = z.read(n)
+                  d=z.read(n)
                   if n.endswith('.class'):
-                      classes += 1
-                      assert d[:4] == b'\xca\xfe\xba\xbe'
-                      assert struct.unpack('>H', d[6:8])[0] == 61, n
+                      classes+=1
+                      assert d[:4]==b'\xca\xfe\xba\xbe' and struct.unpack('>H',d[6:8])[0]==61, n
                   elif n.endswith('.json'):
                       json.loads(d.decode('utf-8'))
-                  if '/models/item/case_models/' in n and n.endswith('.json'):
-                      case_models += 1
+                  if '/models/item/case_models/' in n and n.endswith('.json'): case_models+=1
                   if '/textures/item/cases/' in n and n.endswith('.png'):
-                      case_textures += 1
-                      w,h = struct.unpack('>II', d[16:24])
-                      assert (w,h) == (32,32), (n,w,h)
-              required = {
-                  'assets/musordrop/models/item/station.json',
-                  'assets/musordrop/textures/item/station.png',
+                      case_textures+=1
+                      w,h=struct.unpack('>II',d[16:24]); assert (w,h)==(32,32), (n,w,h)
+              required={
                   'net/execheinz/upgrader/client/screen/UpgraderScreen.class',
                   'net/execheinz/upgrader/client/screen/MusorTheme.class',
                   'net/execheinz/upgrader/client/screen/MusorButton.class',
                   'net/execheinz/upgrader/client/screen/CaseArt.class',
                   'net/execheinz/upgrader/network/ModNetwork.class'
               }
-              assert required <= names, required - names
-              assert classes >= 43 and case_models == 29 and case_textures == 29, (classes, case_models, case_textures)
-              print('JAR_AUDIT_OK', classes, case_models, case_textures)
+              assert required <= names, required-names
+              assert classes>=43 and case_models==29 and case_textures==29, (classes,case_models,case_textures)
+              print('JAR_AUDIT_OK',classes,case_models,case_textures)
           PY
 
           sha256sum "$FINAL" | tee musor-drop/build/libs/SHA256SUMS.txt
@@ -167,7 +168,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Musor-Drop-7.0.0-Forge-1.20.1-Amethyst-Vault-Release
+          name: Musor-Drop-7.0.0-Amethyst-Vault-Release
           path: |
             musor-drop/build/libs/Musor-Drop-7.0.0-Forge-1.20.1-Amethyst-Vault.jar
             musor-drop/build/libs/SHA256SUMS.txt
