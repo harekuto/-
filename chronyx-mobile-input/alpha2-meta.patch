@@ -1,0 +1,45 @@
+--- alpha1_actual/README.md	2026-09-04 04:12:23.000000000 +0000
++++ chronyx_mobile_personal/README.md	2026-09-04 04:50:12.564595924 +0000
+@@ -1,13 +1,16 @@
+-# Chronyx Mobile 0.1.0-alpha.1
++# Chronyx Mobile 0.2.0-alpha.2
+ 
+ Native Android browser shell derived from the verified Chronyx Desktop 0.7.0-alpha.37 product/security baseline. Android does not run the Electron desktop architecture; this build intentionally uses the device's updatable Chromium-based Android WebView instead of emulating or exposing Electron APIs.
+ 
+ ## Included
+ 
+ - Dark Chronyx mobile chrome with resize-safe Android system insets.
+-- Up to 8 live tabs, explicit WebView destruction on tab close, crash recovery, tab restore across restart.
++- Up to 12 live tabs, explicit WebView destruction on tab close, crash recovery, tab restore across restart.
+ - HTTPS-first address/search resolution with DuckDuckGo fallback and blocking of arbitrary privileged/custom schemes.
+-- ChatGPT shortcut/home, standard browser navigation, Android default-browser VIEW intents.
++- Personal-browser home page (DuckDuckGo by default), editable home URL, ChatGPT shortcut, standard navigation and Android default-browser VIEW intents.
++- Persistent bookmarks, bounded history and recently closed tabs with reopen support.
++- User-gesture `target=_blank` / popup handling in real Chronyx tabs.
++- Per-tab Desktop Site mode using the installed WebView Chromium major version rather than a fabricated browser version.
+ - Android Safe Browsing enabled; SSL certificate errors are never bypassed.
+ - No `addJavascriptInterface` or JavaScript-to-native privileged bridge.
+ - `file://` access disabled for remote WebViews; mixed content disabled.
+--- alpha1_actual/app/build.gradle	2026-09-04 04:12:23.000000000 +0000
++++ chronyx_mobile_personal/app/build.gradle	2026-09-04 04:48:55.420405274 +0000
+@@ -10,8 +10,8 @@
+         applicationId 'com.chronyx.browser.mobile'
+         minSdk 26
+         targetSdk 36
+-        versionCode 1
+-        versionName '0.1.0-alpha.1'
++        versionCode 2
++        versionName '0.2.0-alpha.2'
+     }
+ 
+     buildTypes {
+--- alpha1_actual/app/src/main/AndroidManifest.xml	2026-09-04 04:52:31.128376947 +0000
++++ chronyx_mobile_personal/app/src/main/AndroidManifest.xml	2026-09-04 04:50:12.564459031 +0000
+@@ -22,6 +22,7 @@
+             android:name=".MainActivity"
+             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+             android:exported="true"
++            android:launchMode="singleTop"
+             android:resizeableActivity="true">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
