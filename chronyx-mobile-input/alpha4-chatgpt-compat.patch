@@ -1,0 +1,296 @@
+diff -ruN chronyx_a4_base/README.md chronyx_a4/README.md
+--- chronyx_a4_base/README.md	2026-09-04 05:06:30.000000000 +0000
++++ chronyx_a4/README.md	2026-09-04 05:25:00.671391633 +0000
+@@ -1,4 +1,4 @@
+-# Chronyx Mobile 0.3.0-alpha.3
++# Chronyx Mobile 0.4.0-alpha.4
+ 
+ Native Android browser shell derived from the verified Chronyx Desktop 0.7.0-alpha.37 product/security baseline. Android does not run the Electron desktop architecture; this build intentionally uses the device's updatable Chromium-based Android WebView instead of emulating or exposing Electron APIs.
+ 
+@@ -41,3 +41,7 @@
+ Starting with 0.3.0-alpha.3, distributable APKs are signed with the persistent Chronyx Mobile release certificate rather than an ephemeral CI debug key. Future updates must keep the same applicationId (`com.chronyx.browser.mobile`), use a higher versionCode, and be signed by the same release key.
+ 
+ Release certificate SHA-256: `08:E3:DF:D2:CC:CA:DD:A1:EC:1F:6E:8C:97:14:B4:76:F4:D8:98:0C:70:FC:7A:D8:20:7F:22:75:CF:41:6E:A9`.
++
++
++### ChatGPT compatibility
++Chronyx Mobile can automatically enable a compatibility profile for ChatGPT/OpenAI tabs: standard mobile WebView UA, DOM storage, cookies including third-party cookies for that tab, media playback suitable for voice/WebRTC flows, popup support through user gestures, Android file chooser, camera/microphone permissions, download cookies, and persistent cookie flushing. Authentication/security challenges are never bypassed; a default-browser fallback is available because OpenAI recommends Chrome or Brave for Android login flows.
+diff -ruN chronyx_a4_base/UPDATE_POLICY.md chronyx_a4/UPDATE_POLICY.md
+--- chronyx_a4_base/UPDATE_POLICY.md	2026-09-04 05:06:30.000000000 +0000
++++ chronyx_a4/UPDATE_POLICY.md	2026-09-04 05:24:33.044175405 +0000
+@@ -17,3 +17,9 @@
+ 5. pass APK signature and package-metadata verification before release.
+ 
+ The private signing material is not stored in the public source repository.
++
++
++## 0.4.0-alpha.4
++- Keeps the same persistent Chronyx signing identity so Android can update in place from 0.3.0-alpha.3.
++- Adds origin-scoped ChatGPT/OpenAI compatibility mode with third-party cookies on ChatGPT tabs, media/WebRTC-friendly playback, cookie flushing, and supported-browser login fallback.
++- Does not bypass authentication, SSL errors, Safe Browsing, or site anti-abuse controls.
+diff -ruN chronyx_a4_base/app/build.gradle chronyx_a4/app/build.gradle
+--- chronyx_a4_base/app/build.gradle	2026-09-04 05:06:30.000000000 +0000
++++ chronyx_a4/app/build.gradle	2026-09-04 05:24:33.043540601 +0000
+@@ -10,8 +10,8 @@
+         applicationId 'com.chronyx.browser.mobile'
+         minSdk 26
+         targetSdk 36
+-        versionCode 3
+-        versionName '0.3.0-alpha.3'
++        versionCode 4
++        versionName '0.4.0-alpha.4'
+     }
+ 
+     buildTypes {
+diff -ruN chronyx_a4_base/app/src/main/java/com/chronyx/browser/mobile/BrowserTab.java chronyx_a4/app/src/main/java/com/chronyx/browser/mobile/BrowserTab.java
+--- chronyx_a4_base/app/src/main/java/com/chronyx/browser/mobile/BrowserTab.java	2026-09-04 05:06:30.000000000 +0000
++++ chronyx_a4/app/src/main/java/com/chronyx/browser/mobile/BrowserTab.java	2026-09-04 05:24:33.043491899 +0000
+@@ -9,6 +9,7 @@
+     String displayUrl = "";
+     String defaultUserAgent = "";
+     boolean desktopSite;
++    boolean chatGptCompatibility;
+ 
+     BrowserTab(long id, WebView webView) {
+         this.id = id;
+diff -ruN chronyx_a4_base/app/src/main/java/com/chronyx/browser/mobile/MainActivity.java chronyx_a4/app/src/main/java/com/chronyx/browser/mobile/MainActivity.java
+--- chronyx_a4_base/app/src/main/java/com/chronyx/browser/mobile/MainActivity.java	2026-09-04 05:06:30.000000000 +0000
++++ chronyx_a4/app/src/main/java/com/chronyx/browser/mobile/MainActivity.java	2026-09-04 05:24:49.648433054 +0000
+@@ -128,7 +128,7 @@
+         brandRow.setGravity(Gravity.CENTER_VERTICAL);
+         brandRow.setPadding(dp(14), dp(7), dp(8), dp(5));
+         TextView brand = new TextView(this);
+-        brand.setText("CHRONYX  •  MOBILE α2");
++        brand.setText("CHRONYX  •  MOBILE α4");
+         brand.setTextColor(color("#F5F7FB"));
+         brand.setTextSize(14);
+         brand.setTypeface(null, android.graphics.Typeface.BOLD);
+@@ -250,6 +250,7 @@
+         }
+         WebView webView = new WebView(this);
+         BrowserTab tab = new BrowserTab(nextTabId++, webView);
++        tab.chatGptCompatibility = sessionStore.chatGptCompatibilityEnabled() && isChatGptOrOpenAiUrl(url);
+         configureWebView(tab);
+         tabs.add(tab);
+         if (select || activeIndex < 0) selectTab(tabs.size() - 1);
+@@ -276,12 +277,14 @@
+         settings.setSupportZoom(true);
+         settings.setGeolocationEnabled(true);
+         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
++        settings.setMediaPlaybackRequiresUserGesture(true);
+         tab.defaultUserAgent = settings.getUserAgentString();
+         if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
+ 
+         CookieManager cookieManager = CookieManager.getInstance();
+         cookieManager.setAcceptCookie(true);
+         cookieManager.setAcceptThirdPartyCookies(webView, sessionStore.thirdPartyCookiesEnabled());
++        applyChatGptCompatibility(tab);
+ 
+         webView.setWebViewClient(new WebViewClient() {
+             @Override
+@@ -294,6 +297,10 @@
+ 
+             @Override
+             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
++                if (sessionStore.chatGptCompatibilityEnabled() && isChatGptOrOpenAiUrl(url)) {
++                    tab.chatGptCompatibility = true;
++                    applyChatGptCompatibility(tab);
++                }
+                 hideError();
+                 progress.setVisibility(View.VISIBLE);
+                 tab.displayUrl = safeDisplayUrl(url);
+@@ -307,6 +314,7 @@
+                 if (tab == activeTab()) address.setText(tab.displayUrl);
+                 updateNavState();
+                 browserDataStore.recordHistory(tab.title, url);
++                if (tab.chatGptCompatibility) CookieManager.getInstance().flush();
+                 saveSession();
+             }
+ 
+@@ -363,6 +371,8 @@
+                 if (!isUserGesture || resultMsg == null) return false;
+                 BrowserTab child = createTab("about:blank", true);
+                 if (child == null) return false;
++                child.chatGptCompatibility = tab.chatGptCompatibility;
++                applyChatGptCompatibility(child);
+                 WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                 transport.setWebView(child.webView);
+                 resultMsg.sendToTarget();
+@@ -701,7 +711,8 @@
+         boolean bookmarked = tab != null && browserDataStore.isBookmarked(tab.webView.getUrl());
+         boolean desktop = tab != null && tab.desktopSite;
+         String[] items = {
+-                "ChatGPT",
++                "ChatGPT — maximum compatibility",
++                "ChatGPT in default browser (login fallback)",
+                 "New tab",
+                 "Home",
+                 bookmarked ? "Remove bookmark" : "Bookmark this page",
+@@ -719,19 +730,20 @@
+                 .setTitle("Chronyx")
+                 .setItems(items, (d, which) -> {
+                     switch (which) {
+-                        case 0: if (activeTab() != null) activeTab().webView.loadUrl(CHATGPT_URL); break;
+-                        case 1: createTab(homeUrl(), true); break;
+-                        case 2: if (activeTab() != null) activeTab().webView.loadUrl(homeUrl()); break;
+-                        case 3: toggleBookmark(); break;
+-                        case 4: showBookmarks(); break;
+-                        case 5: showHistory(); break;
+-                        case 6: reopenClosedTab(); break;
+-                        case 7: toggleDesktopSite(); break;
+-                        case 8: openCurrentInExternalBrowser(); break;
+-                        case 9: shareCurrentPage(); break;
+-                        case 10: showSettings(); break;
+-                        case 11: confirmClearSiteData(); break;
+-                        case 12: showAbout(); break;
++                        case 0: openChatGptInCurrentTab(); break;
++                        case 1: openChatGptInDefaultBrowser(); break;
++                        case 2: createTab(homeUrl(), true); break;
++                        case 3: if (activeTab() != null) activeTab().webView.loadUrl(homeUrl()); break;
++                        case 4: toggleBookmark(); break;
++                        case 5: showBookmarks(); break;
++                        case 6: showHistory(); break;
++                        case 7: reopenClosedTab(); break;
++                        case 8: toggleDesktopSite(); break;
++                        case 9: openCurrentInExternalBrowser(); break;
++                        case 10: shareCurrentPage(); break;
++                        case 11: showSettings(); break;
++                        case 12: confirmClearSiteData(); break;
++                        case 13: showAbout(); break;
+                         default: break;
+                     }
+                 })
+@@ -765,12 +777,17 @@
+         restore.setChecked(sessionStore.restoreTabsEnabled());
+         box.addView(restore);
+         CheckBox thirdParty = new CheckBox(this);
+-        thirdParty.setText("Allow third-party cookies (may improve some sign-ins)");
++        thirdParty.setText("Allow third-party cookies for all tabs");
+         thirdParty.setTextColor(color("#F5F7FB"));
+         thirdParty.setChecked(sessionStore.thirdPartyCookiesEnabled());
+         box.addView(thirdParty);
++        CheckBox chatGptCompat = new CheckBox(this);
++        chatGptCompat.setText("Maximize ChatGPT web compatibility");
++        chatGptCompat.setTextColor(color("#F5F7FB"));
++        chatGptCompat.setChecked(sessionStore.chatGptCompatibilityEnabled());
++        box.addView(chatGptCompat);
+         TextView note = new TextView(this);
+-        note.setText("Safe Browsing stays enabled. Chronyx Mobile does not inject JavaScript bridges into websites. Google or other providers may block sign-in inside embedded WebView; Chronyx does not bypass those protections.");
++        note.setText("ChatGPT compatibility keeps the normal WebView user agent, enables third-party cookies only on ChatGPT/OpenAI tabs, allows media playback needed by voice features, and flushes cookies for session persistence. Safe Browsing, SSL validation, mixed-content blocking and the no-JavaScript-bridge rule stay enabled. For login failures, use the supported-browser fallback.");
+         note.setTextColor(color("#9AA6B8"));
+         note.setPadding(0, dp(12), 0, 0);
+         box.addView(note);
+@@ -786,7 +803,12 @@
+                     }
+                     sessionStore.setRestoreTabsEnabled(restore.isChecked());
+                     sessionStore.setThirdPartyCookiesEnabled(thirdParty.isChecked());
+-                    for (BrowserTab tab : tabs) CookieManager.getInstance().setAcceptThirdPartyCookies(tab.webView, thirdParty.isChecked());
++                    sessionStore.setChatGptCompatibilityEnabled(chatGptCompat.isChecked());
++                    for (BrowserTab tab : tabs) {
++                        if (!chatGptCompat.isChecked()) tab.chatGptCompatibility = false;
++                        else if (isChatGptOrOpenAiUrl(tab.webView.getUrl())) tab.chatGptCompatibility = true;
++                        applyChatGptCompatibility(tab);
++                    }
+                     saveSession();
+                 })
+                 .create();
+@@ -819,9 +841,9 @@
+     private void showAbout() {
+         String webViewVersion = "Unknown";
+         if (Build.VERSION.SDK_INT >= 26 && WebView.getCurrentWebViewPackage() != null) webViewVersion = WebView.getCurrentWebViewPackage().versionName;
+-        String text = "Chronyx Mobile 0.2.0-alpha.2\n\nAndroid WebView: " + webViewVersion +
++        String text = "Chronyx Mobile 0.4.0-alpha.4\n\nAndroid WebView: " + webViewVersion +
+                 "\nDesktop baseline: Chronyx 0.7.0-alpha.37\n\n" +
+-                "This Android build uses the device's updatable Chromium-based WebView. No Node/Electron APIs are exposed to websites. Safe Browsing remains enabled. This alpha APK is debug-signed for testing.";
++                "This Android build uses the device's updatable Chromium-based WebView. ChatGPT compatibility mode improves cookies, media/WebRTC flows, popups, file upload and session persistence without bypassing authentication or browser security. No Node/Electron APIs are exposed to websites. Safe Browsing remains enabled. This release uses the persistent Chronyx signing identity.";
+         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("About Chronyx").setMessage(text).setPositiveButton("OK", null).create();
+         dialog.setOnShowListener(d -> tintDialog(dialog));
+         dialog.show();
+@@ -910,6 +932,51 @@
+         }
+     }
+ 
++    private void openChatGptInCurrentTab() {
++        BrowserTab tab = activeTab();
++        if (tab == null) tab = createTab(CHATGPT_URL, true);
++        if (tab == null) return;
++        tab.chatGptCompatibility = sessionStore.chatGptCompatibilityEnabled();
++        applyChatGptCompatibility(tab);
++        tab.webView.loadUrl(CHATGPT_URL);
++    }
++
++    private void openChatGptInDefaultBrowser() {
++        try {
++            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(CHATGPT_URL)));
++        } catch (ActivityNotFoundException e) {
++            toast("No compatible browser found");
++        }
++    }
++
++    private void applyChatGptCompatibility(BrowserTab tab) {
++        if (tab == null) return;
++        boolean enabled = sessionStore.chatGptCompatibilityEnabled() && tab.chatGptCompatibility;
++        WebSettings settings = tab.webView.getSettings();
++        settings.setMediaPlaybackRequiresUserGesture(!enabled);
++        settings.setDomStorageEnabled(true);
++        settings.setDatabaseEnabled(true);
++        settings.setJavaScriptEnabled(true);
++        settings.setSupportMultipleWindows(true);
++        CookieManager cookies = CookieManager.getInstance();
++        cookies.setAcceptCookie(true);
++        cookies.setAcceptThirdPartyCookies(tab.webView, enabled || sessionStore.thirdPartyCookiesEnabled());
++    }
++
++    private boolean isChatGptOrOpenAiUrl(String raw) {
++        if (raw == null || raw.trim().isEmpty()) return false;
++        try {
++            Uri uri = Uri.parse(raw);
++            String host = uri.getHost();
++            if (host == null) return false;
++            host = host.toLowerCase(Locale.ROOT);
++            return host.equals("chatgpt.com") || host.endsWith(".chatgpt.com") ||
++                    host.equals("openai.com") || host.endsWith(".openai.com");
++        } catch (Exception ignored) {
++            return false;
++        }
++    }
++
+     private void toggleDesktopSite() {
+         BrowserTab tab = activeTab();
+         if (tab == null) return;
+@@ -968,6 +1035,7 @@
+         WebView replacement = new WebView(this);
+         BrowserTab tab = new BrowserTab(crashed.id, replacement);
+         tab.displayUrl = url == null ? homeUrl() : url;
++        tab.chatGptCompatibility = crashed.chatGptCompatibility || (sessionStore.chatGptCompatibilityEnabled() && isChatGptOrOpenAiUrl(tab.displayUrl));
+         tabs.set(index, tab);
+         configureWebView(tab);
+         if (activeIndex == index) selectTab(index);
+@@ -1049,6 +1117,7 @@
+     @Override
+     protected void onStop() {
+         saveSession();
++        CookieManager.getInstance().flush();
+         super.onStop();
+     }
+ 
+diff -ruN chronyx_a4_base/app/src/main/java/com/chronyx/browser/mobile/SessionStore.java chronyx_a4/app/src/main/java/com/chronyx/browser/mobile/SessionStore.java
+--- chronyx_a4_base/app/src/main/java/com/chronyx/browser/mobile/SessionStore.java	2026-09-04 05:06:30.000000000 +0000
++++ chronyx_a4/app/src/main/java/com/chronyx/browser/mobile/SessionStore.java	2026-09-04 05:24:33.043367654 +0000
+@@ -15,6 +15,7 @@
+     private static final String KEY_RESTORE = "restore_tabs";
+     private static final String KEY_THIRD_PARTY = "third_party_cookies";
+     private static final String KEY_HOME = "homepage_v1";
++    private static final String KEY_CHATGPT_COMPAT = "chatgpt_compat_v1";
+ 
+     private final SharedPreferences prefs;
+ 
+@@ -26,6 +27,8 @@
+     void setRestoreTabsEnabled(boolean value) { prefs.edit().putBoolean(KEY_RESTORE, value).apply(); }
+     boolean thirdPartyCookiesEnabled() { return prefs.getBoolean(KEY_THIRD_PARTY, false); }
+     void setThirdPartyCookiesEnabled(boolean value) { prefs.edit().putBoolean(KEY_THIRD_PARTY, value).apply(); }
++    boolean chatGptCompatibilityEnabled() { return prefs.getBoolean(KEY_CHATGPT_COMPAT, true); }
++    void setChatGptCompatibilityEnabled(boolean value) { prefs.edit().putBoolean(KEY_CHATGPT_COMPAT, value).apply(); }
+ 
+     String homepage() {
+         String safe = UrlResolver.sanitizePersistent(prefs.getString(KEY_HOME, DEFAULT_HOME));
