@@ -1,0 +1,421 @@
+--- alpha1_actual/app/src/main/java/com/chronyx/browser/mobile/MainActivity.java	2026-09-04 04:25:43.000000000 +0000
++++ chronyx_mobile_personal/app/src/main/java/com/chronyx/browser/mobile/MainActivity.java	2026-09-04 04:50:12.564273765 +0000
+@@ -15,6 +15,7 @@
+ import android.os.Build;
+ import android.os.Bundle;
+ import android.os.Environment;
++import android.os.Message;
+ import android.provider.Settings;
+ import android.view.Gravity;
+ import android.view.KeyEvent;
+@@ -55,7 +56,7 @@
+ import java.util.Locale;
+ 
+ public final class MainActivity extends Activity {
+-    private static final String HOME_URL = "https://chatgpt.com/";
++    private static final String CHATGPT_URL = "https://chatgpt.com/";
+     private static final int REQUEST_FILE_CHOOSER = 2001;
+     private static final int REQUEST_WEB_PERMISSIONS = 2002;
+     private static final int REQUEST_GEOLOCATION = 2003;
+@@ -77,6 +78,7 @@
+     private TextView errorText;
+ 
+     private SessionStore sessionStore;
++    private BrowserDataStore browserDataStore;
+     private ValueCallback<Uri[]> fileChooserCallback;
+     private PermissionRequest pendingWebPermissionRequest;
+     private String[] pendingWebPermissionResources;
+@@ -92,6 +94,7 @@
+     protected void onCreate(Bundle savedInstanceState) {
+         super.onCreate(savedInstanceState);
+         sessionStore = new SessionStore(this);
++        browserDataStore = new BrowserDataStore(this);
+         WebView.setWebContentsDebuggingEnabled(false);
+         buildUi();
+         configureBackNavigation();
+@@ -125,14 +128,14 @@
+         brandRow.setGravity(Gravity.CENTER_VERTICAL);
+         brandRow.setPadding(dp(14), dp(7), dp(8), dp(5));
+         TextView brand = new TextView(this);
+-        brand.setText("CHRONYX  •  MOBILE α1");
++        brand.setText("CHRONYX  •  MOBILE α2");
+         brand.setTextColor(color("#F5F7FB"));
+         brand.setTextSize(14);
+         brand.setTypeface(null, android.graphics.Typeface.BOLD);
+         brandRow.addView(brand, new LinearLayout.LayoutParams(0, dp(40), 1f));
+ 
+         ImageButton newTab = iconButton(com.chronyx.browser.mobile.R.drawable.ic_add, "New tab");
+-        newTab.setOnClickListener(v -> createTab(HOME_URL, true));
++        newTab.setOnClickListener(v -> createTab(homeUrl(), true));
+         brandRow.addView(newTab, square(42));
+         ImageButton more = iconButton(com.chronyx.browser.mobile.R.drawable.ic_more, "More options");
+         more.setOnClickListener(v -> showMenu());
+@@ -233,7 +236,7 @@
+         }
+         SessionStore.RestoredSession restored = sessionStore.restore();
+         if (restored.urls.isEmpty()) {
+-            createTab(HOME_URL, true);
++            createTab(homeUrl(), true);
+             return;
+         }
+         for (String url : restored.urls) createTab(url, false);
+@@ -250,7 +253,8 @@
+         configureWebView(tab);
+         tabs.add(tab);
+         if (select || activeIndex < 0) selectTab(tabs.size() - 1);
+-        webView.loadUrl(UrlResolver.resolve(url));
++        if ("about:blank".equals(url)) webView.loadUrl("about:blank");
++        else webView.loadUrl(UrlResolver.resolve(url));
+         updateTabsButton();
+         return tab;
+     }
+@@ -265,13 +269,14 @@
+         settings.setAllowFileAccess(false);
+         settings.setAllowContentAccess(true);
+         settings.setJavaScriptCanOpenWindowsAutomatically(false);
+-        settings.setSupportMultipleWindows(false);
++        settings.setSupportMultipleWindows(true);
+         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+         settings.setBuiltInZoomControls(true);
+         settings.setDisplayZoomControls(false);
+         settings.setSupportZoom(true);
+         settings.setGeolocationEnabled(true);
+         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
++        tab.defaultUserAgent = settings.getUserAgentString();
+         if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
+ 
+         CookieManager cookieManager = CookieManager.getInstance();
+@@ -301,6 +306,7 @@
+                 tab.displayUrl = safeDisplayUrl(url);
+                 if (tab == activeTab()) address.setText(tab.displayUrl);
+                 updateNavState();
++                browserDataStore.recordHistory(tab.title, url);
+                 saveSession();
+             }
+ 
+@@ -353,6 +359,27 @@
+             }
+ 
+             @Override
++            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
++                if (!isUserGesture || resultMsg == null) return false;
++                BrowserTab child = createTab("about:blank", true);
++                if (child == null) return false;
++                WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
++                transport.setWebView(child.webView);
++                resultMsg.sendToTarget();
++                return true;
++            }
++
++            @Override
++            public void onCloseWindow(WebView window) {
++                for (int i = 0; i < tabs.size(); i++) {
++                    if (tabs.get(i).webView == window) {
++                        closeTab(i);
++                        return;
++                    }
++                }
++            }
++
++            @Override
+             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                 if (fileChooserCallback != null) fileChooserCallback.onReceiveValue(null);
+                 fileChooserCallback = callback;
+@@ -578,6 +605,10 @@
+                 .show();
+     }
+ 
++    private String homeUrl() {
++        return sessionStore == null ? SessionStore.DEFAULT_HOME : sessionStore.homepage();
++    }
++
+     private void navigateAddress() {
+         BrowserTab tab = activeTab();
+         if (tab == null) return;
+@@ -606,10 +637,11 @@
+         if (index < 0 || index >= tabs.size()) return;
+         if (tabs.size() == 1) {
+             tabs.get(0).webView.clearHistory();
+-            tabs.get(0).webView.loadUrl(HOME_URL);
++            tabs.get(0).webView.loadUrl(homeUrl());
+             return;
+         }
+         BrowserTab removed = tabs.remove(index);
++        browserDataStore.recordClosedTab(removed.title, removed.displayUrl.isEmpty() ? removed.webView.getUrl() : removed.displayUrl);
+         if (removed.webView.getParent() instanceof ViewGroup) ((ViewGroup) removed.webView.getParent()).removeView(removed.webView);
+         removed.webView.stopLoading();
+         removed.webView.setWebChromeClient(null);
+@@ -656,7 +688,7 @@
+         AlertDialog dialog = new AlertDialog.Builder(this)
+                 .setTitle("Tabs (" + tabs.size() + ")")
+                 .setView(scroll)
+-                .setPositiveButton("New tab", (d, w) -> createTab(HOME_URL, true))
++                .setPositiveButton("New tab", (d, w) -> createTab(homeUrl(), true))
+                 .setNegativeButton("Close", null)
+                 .create();
+         holder[0] = dialog;
+@@ -665,17 +697,41 @@
+     }
+ 
+     private void showMenu() {
+-        String[] items = {"ChatGPT", "Home", "Share page", "Settings", "Clear site data", "About"};
++        BrowserTab tab = activeTab();
++        boolean bookmarked = tab != null && browserDataStore.isBookmarked(tab.webView.getUrl());
++        boolean desktop = tab != null && tab.desktopSite;
++        String[] items = {
++                "ChatGPT",
++                "New tab",
++                "Home",
++                bookmarked ? "Remove bookmark" : "Bookmark this page",
++                "Bookmarks",
++                "History",
++                "Reopen closed tab",
++                desktop ? "Mobile site" : "Desktop site",
++                "Open in another browser",
++                "Share page",
++                "Settings",
++                "Clear browsing data",
++                "About"
++        };
+         AlertDialog dialog = new AlertDialog.Builder(this)
+                 .setTitle("Chronyx")
+                 .setItems(items, (d, which) -> {
+                     switch (which) {
+-                        case 0: activeTab().webView.loadUrl("https://chatgpt.com/"); break;
+-                        case 1: activeTab().webView.loadUrl(HOME_URL); break;
+-                        case 2: shareCurrentPage(); break;
+-                        case 3: showSettings(); break;
+-                        case 4: confirmClearSiteData(); break;
+-                        case 5: showAbout(); break;
++                        case 0: if (activeTab() != null) activeTab().webView.loadUrl(CHATGPT_URL); break;
++                        case 1: createTab(homeUrl(), true); break;
++                        case 2: if (activeTab() != null) activeTab().webView.loadUrl(homeUrl()); break;
++                        case 3: toggleBookmark(); break;
++                        case 4: showBookmarks(); break;
++                        case 5: showHistory(); break;
++                        case 6: reopenClosedTab(); break;
++                        case 7: toggleDesktopSite(); break;
++                        case 8: openCurrentInExternalBrowser(); break;
++                        case 9: shareCurrentPage(); break;
++                        case 10: showSettings(); break;
++                        case 11: confirmClearSiteData(); break;
++                        case 12: showAbout(); break;
+                         default: break;
+                     }
+                 })
+@@ -688,6 +744,21 @@
+         LinearLayout box = new LinearLayout(this);
+         box.setOrientation(LinearLayout.VERTICAL);
+         box.setPadding(dp(22), dp(12), dp(22), dp(6));
++        TextView homeLabel = new TextView(this);
++        homeLabel.setText("Home page");
++        homeLabel.setTextColor(color("#F5F7FB"));
++        box.addView(homeLabel);
++        EditText home = new EditText(this);
++        home.setSingleLine(true);
++        home.setText(sessionStore.homepage());
++        home.setTextColor(color("#F5F7FB"));
++        home.setHintTextColor(color("#748196"));
++        home.setBackground(rounded(color("#182131"), color("#27344A"), 14));
++        home.setPadding(dp(12), 0, dp(12), 0);
++        LinearLayout.LayoutParams homeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46));
++        homeLp.setMargins(0, dp(6), 0, dp(10));
++        box.addView(home, homeLp);
++
+         CheckBox restore = new CheckBox(this);
+         restore.setText("Restore tabs after restart");
+         restore.setTextColor(color("#F5F7FB"));
+@@ -709,6 +780,10 @@
+                 .setView(box)
+                 .setNegativeButton("Cancel", null)
+                 .setPositiveButton("Save", (d, w) -> {
++                    if (!sessionStore.setHomepage(home.getText().toString())) {
++                        toast("Invalid home page");
++                        return;
++                    }
+                     sessionStore.setRestoreTabsEnabled(restore.isChecked());
+                     sessionStore.setThirdPartyCookiesEnabled(thirdParty.isChecked());
+                     for (BrowserTab tab : tabs) CookieManager.getInstance().setAcceptThirdPartyCookies(tab.webView, thirdParty.isChecked());
+@@ -722,19 +797,21 @@
+     private void confirmClearSiteData() {
+         new AlertDialog.Builder(this)
+                 .setTitle("Clear website data?")
+-                .setMessage("Cookies, WebView storage, cache, history and saved tab restoration will be cleared. Downloads on disk are not deleted.")
++                .setMessage("Cookies, WebView storage, page history, recently closed tabs and saved tab restoration will be cleared. Bookmarks and downloaded files are kept.")
+                 .setNegativeButton("Cancel", null)
+                 .setPositiveButton("Clear", (d, w) -> {
+                     CookieManager.getInstance().removeAllCookies(null);
+                     CookieManager.getInstance().flush();
+                     WebStorage.getInstance().deleteAllData();
+                     sessionStore.clearSession();
++                    browserDataStore.clearHistory();
++                    browserDataStore.clearClosedTabs();
+                     for (BrowserTab tab : tabs) {
+                         tab.webView.clearCache(true);
+                         tab.webView.clearHistory();
+                     }
+                     toast("Website data cleared");
+-                    activeTab().webView.loadUrl(HOME_URL);
++                    activeTab().webView.loadUrl(homeUrl());
+                 })
+                 .show();
+     }
+@@ -742,7 +819,7 @@
+     private void showAbout() {
+         String webViewVersion = "Unknown";
+         if (Build.VERSION.SDK_INT >= 26 && WebView.getCurrentWebViewPackage() != null) webViewVersion = WebView.getCurrentWebViewPackage().versionName;
+-        String text = "Chronyx Mobile 0.1.0-alpha.1\n\nAndroid WebView: " + webViewVersion +
++        String text = "Chronyx Mobile 0.2.0-alpha.2\n\nAndroid WebView: " + webViewVersion +
+                 "\nDesktop baseline: Chronyx 0.7.0-alpha.37\n\n" +
+                 "This Android build uses the device's updatable Chromium-based WebView. No Node/Electron APIs are exposed to websites. Safe Browsing remains enabled. This alpha APK is debug-signed for testing.";
+         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("About Chronyx").setMessage(text).setPositiveButton("OK", null).create();
+@@ -763,6 +840,125 @@
+         startActivity(Intent.createChooser(share, "Share page"));
+     }
+ 
++    private void toggleBookmark() {
++        BrowserTab tab = activeTab();
++        if (tab == null) return;
++        String url = UrlResolver.sanitizePersistent(tab.webView.getUrl());
++        if (url == null) {
++            toast("This page cannot be bookmarked");
++            return;
++        }
++        if (browserDataStore.isBookmarked(url)) {
++            browserDataStore.removeBookmark(url);
++            toast("Bookmark removed");
++        } else {
++            browserDataStore.addBookmark(tab.title, url);
++            toast("Bookmark saved");
++        }
++    }
++
++    private void showBookmarks() {
++        showEntryDialog("Bookmarks", browserDataStore.bookmarks());
++    }
++
++    private void showHistory() {
++        showEntryDialog("History", browserDataStore.history());
++    }
++
++    private void showEntryDialog(String title, List<BrowserDataStore.Entry> entries) {
++        if (entries.isEmpty()) {
++            toast(title + " is empty");
++            return;
++        }
++        int limit = Math.min(entries.size(), 100);
++        String[] labels = new String[limit];
++        for (int i = 0; i < limit; i++) {
++            BrowserDataStore.Entry entry = entries.get(i);
++            labels[i] = compact(entry.title, 54) + "\n" + compact(safeDisplayUrl(entry.url), 72);
++        }
++        AlertDialog dialog = new AlertDialog.Builder(this)
++                .setTitle(title)
++                .setItems(labels, (d, which) -> {
++                    if (which >= 0 && which < entries.size()) createTab(entries.get(which).url, true);
++                })
++                .setNegativeButton("Close", null)
++                .create();
++        dialog.setOnShowListener(d -> tintDialog(dialog));
++        dialog.show();
++    }
++
++    private void reopenClosedTab() {
++        BrowserDataStore.Entry entry = browserDataStore.popClosedTab();
++        if (entry == null) {
++            toast("No recently closed tabs");
++            return;
++        }
++        createTab(entry.url, true);
++    }
++
++    private void openCurrentInExternalBrowser() {
++        BrowserTab tab = activeTab();
++        String url = tab == null ? null : UrlResolver.sanitizePersistent(tab.webView.getUrl());
++        if (url == null) {
++            toast("This page cannot be opened externally");
++            return;
++        }
++        try {
++            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
++        } catch (ActivityNotFoundException e) {
++            toast("No compatible browser found");
++        }
++    }
++
++    private void toggleDesktopSite() {
++        BrowserTab tab = activeTab();
++        if (tab == null) return;
++        tab.desktopSite = !tab.desktopSite;
++        WebSettings settings = tab.webView.getSettings();
++        if (tab.desktopSite) {
++            String major = currentWebViewMajorVersion();
++            if (major == null) {
++                tab.desktopSite = false;
++                toast("Desktop site is unavailable with this WebView");
++                return;
++            }
++            settings.setUserAgentString("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + major + ".0.0.0 Safari/537.36");
++            settings.setUseWideViewPort(true);
++            settings.setLoadWithOverviewMode(true);
++            toast("Desktop site enabled");
++        } else {
++            settings.setUserAgentString(tab.defaultUserAgent);
++            settings.setUseWideViewPort(false);
++            settings.setLoadWithOverviewMode(false);
++            toast("Mobile site enabled");
++        }
++        tab.webView.reload();
++    }
++
++    private String currentWebViewMajorVersion() {
++        try {
++            if (Build.VERSION.SDK_INT >= 26 && WebView.getCurrentWebViewPackage() != null) {
++                String version = WebView.getCurrentWebViewPackage().versionName;
++                int dot = version.indexOf('.');
++                String major = dot > 0 ? version.substring(0, dot) : version;
++                if (major.matches("\\d{2,3}")) return major;
++            }
++        } catch (Exception ignored) {
++        }
++        BrowserTab tab = activeTab();
++        String ua = tab == null ? "" : tab.defaultUserAgent;
++        int marker = ua.indexOf("Chrome/");
++        if (marker >= 0) {
++            int start = marker + 7;
++            int end = ua.indexOf('.', start);
++            if (end > start) {
++                String major = ua.substring(start, end);
++                if (major.matches("\\d{2,3}")) return major;
++            }
++        }
++        return null;
++    }
++
+     private void recoverCrashedTab(BrowserTab crashed) {
+         int index = tabs.indexOf(crashed);
+         if (index < 0) return;
+@@ -771,7 +967,7 @@
+         crashed.webView.destroy();
+         WebView replacement = new WebView(this);
+         BrowserTab tab = new BrowserTab(crashed.id, replacement);
+-        tab.displayUrl = url == null ? HOME_URL : url;
++        tab.displayUrl = url == null ? homeUrl() : url;
+         tabs.set(index, tab);
+         configureWebView(tab);
+         if (activeIndex == index) selectTab(index);
+@@ -843,6 +1039,14 @@
+     }
+ 
+     @Override
++    protected void onNewIntent(Intent intent) {
++        super.onNewIntent(intent);
++        setIntent(intent);
++        Uri uri = intent == null ? null : intent.getData();
++        if (uri != null && UrlResolver.isHttpOrHttps(uri)) createTab(uri.toString(), true);
++    }
++
++    @Override
+     protected void onStop() {
+         saveSession();
+         super.onStop();
