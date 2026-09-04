@@ -51,8 +51,8 @@ jobs:
           grep -q 'CARD_W = 139' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
           grep -q 'PAGE_SIZE = 4' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
           grep -q 'mulPose(Axis.YP.rotationDegrees' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseArt.java
-          grep -q 'surfaceRaised' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
-          grep -q 'cardSurface' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
+          grep -q 'public static void surface' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
+          grep -q 'public static void selectedSurface' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
           echo SOURCE_700_OK
 
       - name: Static resource layout and security audit
