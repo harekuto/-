@@ -1,0 +1,241 @@
+name: Build Musor Drop 5.1.0 Premium GUI Overhaul
+
+on:
+  push:
+    branches: [ musor-5.1.0-gui-overhaul ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct verified 5.0.1 baseline and apply 5.1 GUI overhaul
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git fetch origin main --depth=1
+          rm -rf /tmp/base-input /tmp/musor-base.zip /tmp/musor-stability.zip /tmp/apply-ui-490.py /tmp/apply-assets-490.py /tmp/musor500.patch /tmp/musor510.patch /tmp/case510.zip musor-drop
+          mkdir -p /tmp/base-input musor-drop
+          git archive --format=tar origin/main build-input | tar -xf - -C /tmp/base-input
+          cat /tmp/base-input/build-input/part-*.b64 | base64 -d > /tmp/musor-base.zip
+          unzip -tq /tmp/musor-base.zip
+          unzip -q /tmp/musor-base.zip -d musor-drop
+
+          MAIN='musor-drop/src/main/java/net/execheinz/upgrader/Upgrader.java'
+          ITEMS='musor-drop/src/main/java/net/execheinz/upgrader/registry/ModItems.java'
+          MENUS='musor-drop/src/main/java/net/execheinz/upgrader/registry/ModMenus.java'
+          ITEM='musor-drop/src/main/java/net/execheinz/upgrader/item/UpgraderItem.java'
+          SCREEN='musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java'
+          sed -i 's/public static final String MODID = "upgrader";/public static final String MODID = "musordrop";/' "$MAIN" || true
+          sed -i 's/ITEMS.register("upgrader",/ITEMS.register("station",/' "$ITEMS" || true
+          sed -i 's/MENUS.register("upgrader",/MENUS.register("station",/' "$MENUS" || true
+          sed -i 's/"menu.upgrader.title"/"menu.musordrop.title"/' "$ITEM" || true
+          sed -i 's/renderTooltip(g, mouseX, mouseY);/renderCaseTooltip(g, mouseX, mouseY);/' "$SCREEN" || true
+          sed -i 's/private void renderTooltip(GuiGraphics g, int mouseX, int mouseY)/private void renderCaseTooltip(GuiGraphics g, int mouseX, int mouseY)/' "$SCREEN" || true
+          [ ! -d musor-drop/src/main/resources/assets/upgrader ] || mv musor-drop/src/main/resources/assets/upgrader musor-drop/src/main/resources/assets/musordrop
+          [ ! -d musor-drop/src/main/resources/data/upgrader ] || mv musor-drop/src/main/resources/data/upgrader musor-drop/src/main/resources/data/musordrop
+          [ ! -f musor-drop/src/main/resources/assets/musordrop/models/item/upgrader.json ] || mv musor-drop/src/main/resources/assets/musordrop/models/item/upgrader.json musor-drop/src/main/resources/assets/musordrop/models/item/station.json
+          [ ! -f musor-drop/src/main/resources/data/musordrop/recipes/upgrader.json ] || mv musor-drop/src/main/resources/data/musordrop/recipes/upgrader.json musor-drop/src/main/resources/data/musordrop/recipes/station.json
+          find musor-drop/src/main/resources -type f -name '*.json' -print0 | xargs -0 -r sed -i -e 's/upgrader:/musordrop:/g' -e 's/musordrop:upgrader/musordrop:station/g'
+
+          cat build-input/stability/part-*.b64 | base64 -d > /tmp/musor-stability.zip
+          unzip -tq /tmp/musor-stability.zip
+          unzip -qo /tmp/musor-stability.zip -d musor-drop
+          cp -a build-input/unified-src/src/. musor-drop/src/
+          python3 build-input/unified-src/generate_visual_assets.py
+          python3 build-input/unified-src/apply_ui_470.py musor-drop
+          python3 build-input/unified-src/prepare_support_480.py musor-drop
+          python3 build-input/unified-src/apply_support_page.py musor-drop
+          python3 build-input/unified-src/apply_ui_480.py musor-drop
+          base64 -d build-input/unified-src/apply_ui_490.py.gz.b64 | gzip -dc > /tmp/apply-ui-490.py
+          base64 -d build-input/unified-src/apply_assets_490.py.gz.b64 | gzip -dc > /tmp/apply-assets-490.py
+          python3 /tmp/apply-ui-490.py musor-drop
+          python3 /tmp/apply-assets-490.py musor-drop
+
+          base64 -d build-input/musor-500-ui.patch.gz.b64 | gzip -dc > /tmp/musor500.patch
+          set +e
+          patch -p1 -d musor-drop < /tmp/musor500.patch
+          PATCH500_RC=$?
+          set -e
+          if [ "$PATCH500_RC" -ne 0 ]; then
+            REJECTS="$(find musor-drop -name '*.rej' -print)"
+            test "$REJECTS" = 'musor-drop/gradle.properties.rej'
+          fi
+          rm -f musor-drop/gradle.properties.rej
+          base64 -d build-input/station500.png.b64 > musor-drop/src/main/resources/assets/musordrop/textures/item/station.png
+
+          python3 build-input/apply_501_run9.py musor-drop
+
+          base64 -d build-input/musor-510-ui.patch.gz.b64 | gzip -dc > /tmp/musor510.patch
+          patch -p1 -d musor-drop < /tmp/musor510.patch
+          test -z "$(find musor-drop -name '*.rej' -print)"
+
+          base64 -d build-input/case-textures-510.zip.b64 > /tmp/case510.zip
+          unzip -tq /tmp/case510.zip
+          unzip -qo /tmp/case510.zip -d musor-drop/src/main/resources/assets/musordrop/textures/item/cases
+
+          sed -i 's/^mod_version=.*/mod_version=5.1.0/' musor-drop/gradle.properties
+          sed -i 's|^mod_description=.*|mod_description=Musor Drop 5.1 professional Forge 1.20.1 station with a complete premium GUI redesign, themed case art, hardened server-authoritative economy, durable rewards, modded-item support, Musor Shards, selling and 224 cases.|' musor-drop/gradle.properties
+
+          grep -q '^minecraft_version=1.20.1$' musor-drop/gradle.properties
+          grep -q '^forge_version=47.4.10$' musor-drop/gradle.properties
+          grep -q '^mod_id=musordrop$' musor-drop/gradle.properties
+          grep -q '^mod_version=5.1.0$' musor-drop/gradle.properties
+          grep -q 'GUI_W = 360' musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java
+          grep -q 'GUI_H = 252' musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java
+          grep -q 'GRID_X = 10' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'GRID_Y = 59' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'CARD_W = 108' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'CARD_H = 43' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'GAP_X = 6' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'GAP_Y = 5' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'drawSearchGlyph' "$SCREEN"
+          grep -q 'drawExternalLinkGlyph' "$SCREEN"
+          grep -q 'safeUnitValue' "$SCREEN"
+          grep -q 'NetworkDirection.PLAY_TO_SERVER' musor-drop/src/main/java/net/execheinz/upgrader/network/ModNetwork.java
+          grep -q 'WARN_PENDING' musor-drop/src/main/java/net/execheinz/upgrader/economy/PendingRewardService.java
+          echo RECONSTRUCT_510_OK
+
+      - name: Static source, geometry, resource and security audit
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ! grep -R --line-number --fixed-string 'catch (Throwable' musor-drop/src/main/java
+          ! grep -R --line-number -E 'm_[0-9]{3,}_' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'System.out.' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'Runtime.exec' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'ProcessBuilder' musor-drop/src/main/java
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,re
+          root=Path('musor-drop/src/main/resources'); jc=pc=0
+          for p in root.rglob('*.json'):
+              json.loads(p.read_text(encoding='utf-8')); jc+=1
+          for p in root.rglob('*.png'):
+              d=p.read_bytes(); assert d[:8]==b'\x89PNG\r\n\x1a\n',p; pc+=1
+          station=Path('musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java').read_text()
+          cases=Path('musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java').read_text()
+          screen=Path('musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java').read_text()
+          button=Path('musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorButton.java').read_text()
+          theme=Path('musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java').read_text()
+          network=Path('musor-drop/src/main/java/net/execheinz/upgrader/network/ModNetwork.java').read_text()
+          pending=Path('musor-drop/src/main/java/net/execheinz/upgrader/economy/PendingRewardService.java').read_text()
+          def c(t,n):
+              m=re.search(rf'{n}\s*=\s*(\d+)',t); assert m,n; return int(m.group(1))
+          W,H=c(station,'GUI_W'),c(station,'GUI_H')
+          ix,iy,hy=[c(station,n) for n in ('INVENTORY_X','INVENTORY_Y','HOTBAR_Y')]
+          gx,gy,cw,ch,dx,dy=[c(cases,n) for n in ('GRID_X','GRID_Y','CARD_W','CARD_H','GAP_X','GAP_Y')]
+          assert (W,H)==(360,252) and W*4<=1440 and H*4<=1024
+          assert ix+9*18<=W-8 and iy+3*18<=hy and hy+19<=H
+          assert (gx,gy,cw,ch,dx,dy)==(10,59,108,43,6,5)
+          assert gx+3*cw+2*dx<=W-10 and gy+2*ch+dy<=151
+          assert 'drawSearchGlyph' in screen and 'drawExternalLinkGlyph' in screen and 'safeUnitValue' in screen
+          assert 'enum Icon' in button and 'UPGRADE' in button and 'CASE' in button and 'SUPPORT' in button
+          assert 'selectedSurface' in theme and 'cornerBrackets' in theme and 'largeSlot' in theme
+          assert network.count('NetworkDirection.PLAY_TO_SERVER')==2
+          assert network.count('NetworkDirection.PLAY_TO_CLIENT')==1
+          assert 'WARN_PENDING' in pending and 'MAX_PENDING' not in pending
+          case_dir=root/'assets/musordrop/textures/item/cases'
+          textures=list(case_dir.glob('*.png'))
+          assert len(textures)==29, len(textures)
+          nether=case_dir/'nether.png'
+          assert hashlib.sha256(nether.read_bytes()).hexdigest()=='ea1a6163f90dc0533d9a8421cdba26bf7b7f75967907f74d8dd037e30f0bb4c4'
+          print('RESOURCE_SECURITY_GEOMETRY_510_OK',jc,pc,len(textures),W,H)
+          PY
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Build and test
+        working-directory: musor-drop
+        run: gradle --no-daemon clean test build --stacktrace
+
+      - name: Collect tests, verify production jar and source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          fs=list(Path('musor-drop/build/test-results/test').glob('TEST-*.xml')); assert fs
+          t=f=e=s=0
+          for p in fs:
+              r=ET.parse(p).getroot(); t+=int(r.attrib.get('tests',0)); f+=int(r.attrib.get('failures',0)); e+=int(r.attrib.get('errors',0)); s+=int(r.attrib.get('skipped',0))
+          print('JUNIT_TOTAL',t,'FAILURES',f,'ERRORS',e,'SKIPPED',s)
+          assert t>=12000 and f==0 and e==0
+          Path('musor-drop/build/test-count.txt').write_text(f'JUnit tests: {t}\nFailures: {f}\nErrors: {e}\nSkipped: {s}\n')
+          PY
+          JAR="$(find musor-drop/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -n1)"
+          FINAL='musor-drop/build/libs/Musor-Drop-5.1.0-Forge-1.20.1-Premium-GUI.jar'
+          test -n "$JAR"
+          cp "$JAR" "$FINAL"
+          unzip -tq "$FINAL"
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'modId="musordrop"'
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'displayName="Musor Drop"'
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'version="5.1.0"'
+          python3 - <<'PY'
+          import hashlib,json,re,struct,zipfile
+          from pathlib import Path
+          jar=Path('musor-drop/build/libs/Musor-Drop-5.1.0-Forge-1.20.1-Premium-GUI.jar')
+          bad=[]; cl=js=pn=cm=ct=0
+          secret=re.compile(rb'(BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY|api[_-]?key\s*[=:])',re.I)
+          with zipfile.ZipFile(jar) as z:
+              names=set(z.namelist())
+              for n in z.namelist():
+                  d=z.read(n)
+                  if n.endswith('.class'):
+                      cl+=1
+                      if d[:4]!=b'\xca\xfe\xba\xbe' or struct.unpack('>H',d[6:8])[0]!=61: bad.append((n,'class-version'))
+                  elif n.endswith('.json'): json.loads(d.decode()); js+=1
+                  elif n.endswith('.png'):
+                      pn+=1
+                      if d[:8]!=b'\x89PNG\r\n\x1a\n': bad.append((n,'png'))
+                  if '/models/item/case_models/' in n and n.endswith('.json'): cm+=1
+                  if '/textures/item/cases/' in n and n.endswith('.png'): ct+=1
+                  if secret.search(d): bad.append((n,'secret'))
+              required={
+                  'assets/musordrop/models/item/station.json',
+                  'assets/musordrop/models/item/case_display.json',
+                  'assets/musordrop/textures/item/station.png',
+                  'assets/musordrop/textures/item/cases/nether.png',
+                  'data/musordrop/recipes/station.json',
+                  'net/execheinz/upgrader/client/screen/UpgraderScreen.class',
+                  'net/execheinz/upgrader/client/screen/MusorTheme.class',
+                  'net/execheinz/upgrader/client/screen/MusorButton.class',
+                  'net/execheinz/upgrader/economy/PendingRewardService.class',
+                  'net/execheinz/upgrader/network/ModNetwork.class'
+              }
+              for r in required:
+                  if r not in names: bad.append((r,'missing'))
+              if hashlib.sha256(z.read('assets/musordrop/textures/item/cases/nether.png')).hexdigest()!='ea1a6163f90dc0533d9a8421cdba26bf7b7f75967907f74d8dd037e30f0bb4c4': bad.append(('nether.png','hash'))
+              junk=re.compile(r'(^|/)(src|stubs|test-classes|\.gradle|logs|crash-reports|__pycache__|\.env)(/|$)')
+              for n in names:
+                  if junk.search(n): bad.append((n,'junk'))
+          print('JAR_AUDIT_510',cl,js,pn,cm,ct,bad)
+          assert cl>=35 and cm==29 and ct==29 and not bad
+          PY
+          sha256sum "$FINAL" | tee musor-drop/build/libs/SHA256SUMS.txt
+          (cd musor-drop && zip -qr build/Musor-Drop-5.1.0-SOURCE.zip src build.gradle gradle.properties settings.gradle)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Musor-Drop-5.1.0-Forge-1.20.1-Premium-GUI
+          path: |
+            musor-drop/build/libs/Musor-Drop-5.1.0-Forge-1.20.1-Premium-GUI.jar
+            musor-drop/build/libs/SHA256SUMS.txt
+            musor-drop/build/test-count.txt
+            musor-drop/build/Musor-Drop-5.1.0-SOURCE.zip
+          if-no-files-found: error
