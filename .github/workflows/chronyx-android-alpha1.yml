@@ -35,7 +35,7 @@ jobs:
           unzip -q /tmp/chronyx-mobile.zip -d chronyx-android
       - name: Install Android SDK
         shell: bash
-        run: yes | sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' >/dev/null
+        run: sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' >/dev/null
       - name: Lint, test and build APK
         working-directory: chronyx-android
         shell: bash
