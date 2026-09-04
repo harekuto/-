@@ -33,13 +33,26 @@ jobs:
           echo '4f29c263a8bd85b6a328f99cdc6bb59736340bd430e2eead4da0e5ea6373b9ff  /tmp/chronyx-mobile.zip' | sha256sum -c -
           mkdir -p chronyx-android
           unzip -q /tmp/chronyx-mobile.zip -d chronyx-android
+          cd chronyx-android
+          patch -p1 < ../chronyx-mobile-input/predictive-back.patch
+          echo 'd3101ac34b4535b7e09d35a17132779cb5ea4ae915aaaa905a4ac9bb169405a4  app/src/main/java/com/chronyx/browser/mobile/MainActivity.java' | sha256sum -c -
+          echo 'c3117840d5f7e343739d7e6e46784c9fb1b409361c8208fc8aec6178ca197815  app/src/main/AndroidManifest.xml' | sha256sum -c -
+          echo 'c53e30f06da02e587a81c4286277395eee892fe1217c6c45d4b386da9a63de7f  gradle.properties' | sha256sum -c -
       - name: Install Android SDK
         shell: bash
         run: sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' >/dev/null
       - name: Lint, test and build APK
         working-directory: chronyx-android
         shell: bash
-        run: gradle --no-daemon :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+        run: |
+          set +e
+          gradle --no-daemon :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo '--- Android lint reports ---'
+            find app/build/reports -type f -name 'lint-results*.txt' -print -exec cat {} \; 2>/dev/null || true
+            exit "$rc"
+          fi
       - name: Verify APK
         shell: bash
         run: |
@@ -47,6 +60,7 @@ jobs:
           cp chronyx-android/app/build/outputs/apk/debug/app-debug.apk Chronyx-Mobile-0.1.0-alpha.1.apk
           sha256sum Chronyx-Mobile-0.1.0-alpha.1.apk > Chronyx-Mobile-0.1.0-alpha.1.apk.sha256
           unzip -t Chronyx-Mobile-0.1.0-alpha.1.apk >/dev/null
+          test -s Chronyx-Mobile-0.1.0-alpha.1.apk
       - uses: actions/upload-artifact@v4
         with:
           name: chronyx-mobile-0.1.0-alpha.1
