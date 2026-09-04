@@ -5,6 +5,7 @@ on:
     branches: [ chronyx-android-alpha1 ]
     paths:
       - '.github/workflows/chronyx-android-alpha1.yml'
+      - 'chronyx-mobile-input/**'
   workflow_dispatch:
 
 permissions:
@@ -35,8 +36,12 @@ jobs:
           unzip -q /tmp/chronyx-mobile.zip -d chronyx-android
           cd chronyx-android
           patch -p1 < ../chronyx-mobile-input/predictive-back.patch
+          patch -p1 < ../chronyx-mobile-input/lint-fixes.patch
           echo 'd3101ac34b4535b7e09d35a17132779cb5ea4ae915aaaa905a4ac9bb169405a4  app/src/main/java/com/chronyx/browser/mobile/MainActivity.java' | sha256sum -c -
-          echo 'c3117840d5f7e343739d7e6e46784c9fb1b409361c8208fc8aec6178ca197815  app/src/main/AndroidManifest.xml' | sha256sum -c -
+          echo '8ba83ac6954ebf54cadfb16e38b2fc4e000f86d04a41a4ede6a2157cfc36f957  app/src/main/java/com/chronyx/browser/mobile/UrlResolver.java' | sha256sum -c -
+          echo 'cc5ab58936eb3f17bbb7b1a2dba75c21a4ea8ea72690afab7111cbe851d39610  app/src/main/AndroidManifest.xml' | sha256sum -c -
+          echo 'c12f7f125acaeab07608ad4264a0857841eaf99a7e8264da4da995705291da65  app/src/main/res/values/styles.xml' | sha256sum -c -
+          echo '663f9ec10d52c79fda784d847705583a12ee33cf44bb30d46c7ee60b43c95454  app/src/main/res/values-v27/styles.xml' | sha256sum -c -
           echo 'c53e30f06da02e587a81c4286277395eee892fe1217c6c45d4b386da9a63de7f  gradle.properties' | sha256sum -c -
       - name: Install Android SDK
         shell: bash
