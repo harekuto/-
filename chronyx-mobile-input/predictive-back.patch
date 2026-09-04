@@ -1,0 +1,91 @@
+--- a/app/src/main/java/com/chronyx/browser/mobile/MainActivity.java	2026-09-04 04:12:23.000000000 +0000
++++ b/app/src/main/java/com/chronyx/browser/mobile/MainActivity.java	2026-09-04 04:25:43.462034234 +0000
+@@ -22,6 +22,8 @@
+ import android.view.ViewGroup;
+ import android.view.WindowInsets;
+ import android.view.inputmethod.EditorInfo;
++import android.window.OnBackInvokedCallback;
++import android.window.OnBackInvokedDispatcher;
+ import android.webkit.CookieManager;
+ import android.webkit.DownloadListener;
+ import android.webkit.GeolocationPermissions;
+@@ -84,6 +86,7 @@
+ 
+     private View customView;
+     private WebChromeClient.CustomViewCallback customViewCallback;
++    private OnBackInvokedCallback predictiveBackCallback;
+ 
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
+@@ -91,6 +94,7 @@
+         sessionStore = new SessionStore(this);
+         WebView.setWebContentsDebuggingEnabled(false);
+         buildUi();
++        configureBackNavigation();
+         restoreOrCreateSession(getIntent());
+     }
+ 
+@@ -846,6 +850,10 @@
+ 
+     @Override
+     protected void onDestroy() {
++        if (Build.VERSION.SDK_INT >= 33 && predictiveBackCallback != null) {
++            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(predictiveBackCallback);
++            predictiveBackCallback = null;
++        }
+         if (fileChooserCallback != null) fileChooserCallback.onReceiveValue(null);
+         if (pendingWebPermissionRequest != null) pendingWebPermissionRequest.deny();
+         if (pendingGeolocationCallback != null) pendingGeolocationCallback.invoke(pendingGeolocationOrigin, false, false);
+@@ -858,8 +866,15 @@
+         super.onDestroy();
+     }
+ 
+-    @Override
+-    public void onBackPressed() {
++    private void configureBackNavigation() {
++        if (Build.VERSION.SDK_INT >= 33) {
++            predictiveBackCallback = this::handleBackNavigation;
++            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
++                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, predictiveBackCallback);
++        }
++    }
++
++    private void handleBackNavigation() {
+         if (customView != null) {
+             hideCustomView();
+             return;
+@@ -867,7 +882,16 @@
+         BrowserTab tab = activeTab();
+         if (tab != null && tab.webView.canGoBack()) tab.webView.goBack();
+         else if (tabs.size() > 1) closeTab(activeIndex);
+-        else super.onBackPressed();
++        else finish();
++    }
++
++    @Override
++    public boolean onKeyDown(int keyCode, KeyEvent event) {
++        if (Build.VERSION.SDK_INT < 33 && keyCode == KeyEvent.KEYCODE_BACK && event.getRepeatCount() == 0) {
++            handleBackNavigation();
++            return true;
++        }
++        return super.onKeyDown(keyCode, event);
+     }
+ 
+     private void showError(String message) {
+--- a/app/src/main/AndroidManifest.xml	2026-09-04 04:12:23.000000000 +0000
++++ b/app/src/main/AndroidManifest.xml	2026-09-04 04:25:43.462206550 +0000
+@@ -13,6 +13,7 @@
+         android:allowBackup="false"
+         android:usesCleartextTraffic="true"
+         android:hardwareAccelerated="true"
++        android:enableOnBackInvokedCallback="true"
+         android:icon="@drawable/chronyx_icon"
+         android:label="@string/app_name"
+         android:theme="@style/Theme.Chronyx">
+--- a/gradle.properties	2026-09-04 04:12:23.000000000 +0000
++++ b/gradle.properties	2026-09-04 04:25:43.462155274 +0000
+@@ -1,4 +1,3 @@
+ org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
+ org.gradle.parallel=true
+ org.gradle.caching=true
+-android.useAndroidX=false
