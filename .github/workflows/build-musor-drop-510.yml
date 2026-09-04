@@ -78,7 +78,7 @@ jobs:
           patch -p1 -d musor-drop < /tmp/musor510.patch
           test -z "$(find musor-drop -name '*.rej' -print)"
 
-          base64 -d build-input/case-textures-510.zip.b64 > /tmp/case510.zip
+          cat build-input/case-textures-510.part*.b64 | base64 -d > /tmp/case510.zip
           unzip -tq /tmp/case510.zip
           unzip -qo /tmp/case510.zip -d musor-drop/src/main/resources/assets/musordrop/textures/item/cases
 
@@ -206,18 +206,7 @@ jobs:
                   if '/models/item/case_models/' in n and n.endswith('.json'): cm+=1
                   if '/textures/item/cases/' in n and n.endswith('.png'): ct+=1
                   if secret.search(d): bad.append((n,'secret'))
-              required={
-                  'assets/musordrop/models/item/station.json',
-                  'assets/musordrop/models/item/case_display.json',
-                  'assets/musordrop/textures/item/station.png',
-                  'assets/musordrop/textures/item/cases/nether.png',
-                  'data/musordrop/recipes/station.json',
-                  'net/execheinz/upgrader/client/screen/UpgraderScreen.class',
-                  'net/execheinz/upgrader/client/screen/MusorTheme.class',
-                  'net/execheinz/upgrader/client/screen/MusorButton.class',
-                  'net/execheinz/upgrader/economy/PendingRewardService.class',
-                  'net/execheinz/upgrader/network/ModNetwork.class'
-              }
+              required={'assets/musordrop/models/item/station.json','assets/musordrop/models/item/case_display.json','assets/musordrop/textures/item/station.png','assets/musordrop/textures/item/cases/nether.png','data/musordrop/recipes/station.json','net/execheinz/upgrader/client/screen/UpgraderScreen.class','net/execheinz/upgrader/client/screen/MusorTheme.class','net/execheinz/upgrader/client/screen/MusorButton.class','net/execheinz/upgrader/economy/PendingRewardService.class','net/execheinz/upgrader/network/ModNetwork.class'}
               for r in required:
                   if r not in names: bad.append((r,'missing'))
               if hashlib.sha256(z.read('assets/musordrop/textures/item/cases/nether.png')).hexdigest()!='ea1a6163f90dc0533d9a8421cdba26bf7b7f75967907f74d8dd037e30f0bb4c4': bad.append(('nether.png','hash'))
