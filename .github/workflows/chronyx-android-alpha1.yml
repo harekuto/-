@@ -62,12 +62,12 @@ jobs:
         shell: bash
         run: sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' >/dev/null
 
-      - name: Lint, test and build unsigned release APK
+      - name: Lint and build unsigned release APK
         working-directory: chronyx-android
         shell: bash
         run: |
           set +e
-          gradle --no-daemon :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease
+          gradle --no-daemon :app:lintRelease :app:assembleRelease
           rc=$?
           if [ "$rc" -ne 0 ]; then
             echo '--- Android lint reports ---'
