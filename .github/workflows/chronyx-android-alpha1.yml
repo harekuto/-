@@ -1,8 +1,8 @@
-name: Chronyx Android Alpha2
+name: Chronyx Android Alpha3 Unsigned
 
 on:
   push:
-    branches: [ chronyx-android-alpha2 ]
+    branches: [ chronyx-android-alpha3-signing ]
     paths:
       - '.github/workflows/chronyx-android-alpha1.yml'
       - 'chronyx-mobile-input/**'
@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: chronyx-android-alpha2
+          ref: chronyx-android-alpha3-signing
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -28,7 +28,7 @@ jobs:
           gradle-version: '9.6.0'
       - uses: android-actions/setup-android@v3
 
-      - name: Restore verified alpha1 baseline and apply alpha2
+      - name: Restore verified source and apply alpha3 release patch
         shell: bash
         run: |
           set -euo pipefail
@@ -42,32 +42,32 @@ jobs:
           patch -p1 < ../chronyx-mobile-input/alpha2-meta.patch
           patch -p1 < ../chronyx-mobile-input/alpha2-data.patch
           patch -p1 < ../chronyx-mobile-input/alpha2-main.patch
-          echo '9cb8f6706c2dbc907e6c987da36aeb51cfb149838ef35002ccbfc2bc6996b844  README.md' | sha256sum -c -
-          echo 'ae96b8c2096005fd256dcf6f2bf7342c463e65c9aac6e6bd4590e6574fd5074b  app/build.gradle' | sha256sum -c -
+          patch -p1 < ../chronyx-mobile-input/alpha3-release.patch
+          echo '0fc342b8cca403f090010c4f123bf9730951820b362d591ce78ff45163b615d5  README.md' | sha256sum -c -
+          echo 'e8b677e80d8ff7bebaf4c481d6aa575cdd0b720eaffa86ba6950a14b8dd68f55  UPDATE_POLICY.md' | sha256sum -c -
+          echo '2588c2da679a7c27d0cbad7291b1add6d397fc78d4693729ea280adef0e3f7ce  app/build.gradle' | sha256sum -c -
           echo '43889f93120e58252210d46f5b071d047946c96a06aa55d9925c9b89778b1f68  app/src/main/AndroidManifest.xml' | sha256sum -c -
-          echo 'ba9aac790fd9a1a57acb216125fe498d94eb91206e3eceed57946e08c9dad3a5  app/src/main/java/com/chronyx/browser/mobile/BrowserDataStore.java' | sha256sum -c -
           echo 'f4a2963d1f947c75e9d46a0177e8dd669509b219b2364b469b56b053250993aa  app/src/main/java/com/chronyx/browser/mobile/MainActivity.java' | sha256sum -c -
-          echo '84d49b47e6cf7496be570062b8ed5836a14ae0fd60bb2e3902ba252cd530eb15  app/src/main/java/com/chronyx/browser/mobile/SessionStore.java' | sha256sum -c -
-          echo '8b4f3efb2755811c315710122aafcf35241893f135a57fd2eda25552897a7cb5  app/src/main/java/com/chronyx/browser/mobile/UrlResolver.java' | sha256sum -c -
-          grep -q "versionName '0.2.0-alpha.2'" app/build.gradle
+          grep -q "versionCode 3" app/build.gradle
+          grep -q "versionName '0.3.0-alpha.3'" app/build.gradle
           ! grep -R "addJavascriptInterface" app/src/main
           ! grep -R "setAllowFileAccess(true)" app/src/main
           ! grep -R "MIXED_CONTENT_ALWAYS_ALLOW" app/src/main
           ! grep -R "handler.proceed()" app/src/main
-          zip -qr ../Chronyx-Mobile-0.2.0-alpha.2-source.zip . -x '*/build/*' '.gradle/*'
+          zip -qr ../Chronyx-Mobile-0.3.0-alpha.3-source.zip . -x '*/build/*' '.gradle/*'
           cd ..
-          sha256sum Chronyx-Mobile-0.2.0-alpha.2-source.zip > Chronyx-Mobile-0.2.0-alpha.2-source.zip.sha256
+          sha256sum Chronyx-Mobile-0.3.0-alpha.3-source.zip > Chronyx-Mobile-0.3.0-alpha.3-source.zip.sha256
 
       - name: Install Android SDK
         shell: bash
         run: sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' >/dev/null
 
-      - name: Lint, test and build APK
+      - name: Lint, test and build unsigned release APK
         working-directory: chronyx-android
         shell: bash
         run: |
           set +e
-          gradle --no-daemon :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+          gradle --no-daemon :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease
           rc=$?
           if [ "$rc" -ne 0 ]; then
             echo '--- Android lint reports ---'
@@ -75,25 +75,30 @@ jobs:
             exit "$rc"
           fi
 
-      - name: Verify APK and signing
+      - name: Verify unsigned APK and export signing tool
         shell: bash
         run: |
           set -euo pipefail
-          test -f chronyx-android/app/build/outputs/apk/debug/app-debug.apk
-          cp chronyx-android/app/build/outputs/apk/debug/app-debug.apk Chronyx-Mobile-0.2.0-alpha.2.apk
-          sha256sum Chronyx-Mobile-0.2.0-alpha.2.apk > Chronyx-Mobile-0.2.0-alpha.2.apk.sha256
-          unzip -t Chronyx-Mobile-0.2.0-alpha.2.apk >/dev/null
-          test -s Chronyx-Mobile-0.2.0-alpha.2.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs Chronyx-Mobile-0.2.0-alpha.2.apk
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging Chronyx-Mobile-0.2.0-alpha.2.apk | head -20
+          APK=chronyx-android/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$APK"
+          cp "$APK" Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk
+          unzip -t Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk | head -20
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" apksigner-36.0.0.jar
+          test -s apksigner-36.0.0.jar
+          sha256sum Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk > Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk.sha256
+          sha256sum apksigner-36.0.0.jar > apksigner-36.0.0.jar.sha256
 
       - uses: actions/upload-artifact@v4
         with:
-          name: chronyx-mobile-0.2.0-alpha.2
+          name: chronyx-mobile-0.3.0-alpha.3-unsigned
           path: |
-            Chronyx-Mobile-0.2.0-alpha.2.apk
-            Chronyx-Mobile-0.2.0-alpha.2.apk.sha256
-            Chronyx-Mobile-0.2.0-alpha.2-source.zip
-            Chronyx-Mobile-0.2.0-alpha.2-source.zip.sha256
+            Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk
+            Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk.sha256
+            Chronyx-Mobile-0.3.0-alpha.3-source.zip
+            Chronyx-Mobile-0.3.0-alpha.3-source.zip.sha256
+            apksigner-36.0.0.jar
+            apksigner-36.0.0.jar.sha256
           if-no-files-found: error
           retention-days: 14
