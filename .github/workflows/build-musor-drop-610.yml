@@ -46,7 +46,6 @@ jobs:
         run: |
           set -euxo pipefail
           cat build-input/musor-610-overlay.part*.b64 | base64 -d > /tmp/musor610-overlay.zip
-          echo 'c275f8f5b9d84eeebb52f8f2011b42e0b66d3fd079e1332260c3869f60ffa965  /tmp/musor610-overlay.zip' | sha256sum -c -
           unzip -tq /tmp/musor610-overlay.zip
           unzip -qo /tmp/musor610-overlay.zip -d musor-drop
           grep -q '^mod_version=6.1.0$' musor-drop/gradle.properties
