@@ -1,0 +1,65 @@
+name: Mindsight 0.4.0 Release Build4
+
+on:
+  push:
+    branches: [mindsight-0.4.0-release-build4]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle 8.8
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+      - name: Reconstruct exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p project mindsight-build/artifact
+          cat mindsight-build/source.b64.part* | base64 --decode > mindsight-build/Mindsight-0.4.0-PRODUCTION-SOURCE.zip
+          echo 'b1b1d47a7657c6c608f113f181e1fe3e235d218c4a05d443d1c257922bf11e01  mindsight-build/Mindsight-0.4.0-PRODUCTION-SOURCE.zip' | sha256sum -c -
+          unzip -t mindsight-build/Mindsight-0.4.0-PRODUCTION-SOURCE.zip
+          unzip -q mindsight-build/Mindsight-0.4.0-PRODUCTION-SOURCE.zip -d project
+          test -f project/build.gradle
+          test -f project/gradle.properties
+          grep -E '^(minecraft_version|forge_version|mapping_channel|mapping_version|mod_id|mod_version)=' project/gradle.properties
+      - name: Build Forge production JAR
+        shell: bash
+        run: |
+          set -o pipefail
+          cd project
+          gradle clean build --stacktrace 2>&1 | tee ../mindsight-build/gradle-build.log
+      - name: Inspect release JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR="$(find project/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' | head -n 1)"
+          test -n "$JAR"
+          unzip -t "$JAR"
+          jar tf "$JAR" | tee mindsight-build/artifact/jar-contents.txt
+          grep -qx 'META-INF/mods.toml' mindsight-build/artifact/jar-contents.txt
+          grep -qx 'pack.mcmeta' mindsight-build/artifact/jar-contents.txt
+          cp "$JAR" mindsight-build/artifact/Mindsight-0.4.0-forge-1.20.1-47.4.10.jar
+          sha256sum mindsight-build/artifact/Mindsight-0.4.0-forge-1.20.1-47.4.10.jar | tee mindsight-build/artifact/SHA256SUMS.txt
+          cp mindsight-build/gradle-build.log mindsight-build/artifact/
+      - name: Upload production artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mindsight-0.4.0-production
+          path: |
+            mindsight-build/artifact/**
+            mindsight-build/gradle-build.log
+          if-no-files-found: warn
+          retention-days: 7
