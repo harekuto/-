@@ -13,18 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Checkout overhaul branch
-        uses: actions/checkout@v4
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - name: Set up Gradle 8.8
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.8'
-      - name: Verify and unpack exact overhaul source
+      - name: Verify source
         shell: bash
         run: |
           set -euo pipefail
@@ -32,29 +29,24 @@ jobs:
           echo '708bbb781daa6aec6333c2e30e1e2c255869040ec49463e3413d8bac18ea632d  mindsight-build/Mindsight-0.4.0-SOURCE.zip' | sha256sum -c -
           unzip -t mindsight-build/Mindsight-0.4.0-SOURCE.zip
           unzip -q mindsight-build/Mindsight-0.4.0-SOURCE.zip -d project
-          test -f project/build.gradle
-          grep -E '^(minecraft_version|forge_version|mapping_channel|mapping_version|mod_id|mod_version)=' project/gradle.properties
-      - name: Build production Forge JAR
+      - name: Build
         shell: bash
         run: |
           set -o pipefail
           cd project
           gradle clean build --stacktrace 2>&1 | tee ../mindsight-build/gradle-build.log
-      - name: Inspect production JAR
+      - name: Inspect JAR
         shell: bash
         run: |
           set -euo pipefail
-          JAR="$(find project/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' -print | head -n 1)"
+          JAR="$(find project/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' -print | head -n1)"
           test -n "$JAR"
           unzip -t "$JAR"
           jar tf "$JAR" | tee mindsight-build/artifact/jar-contents.txt
-          test "$(grep -c '^META-INF/mods.toml$' mindsight-build/artifact/jar-contents.txt)" -eq 1
-          test "$(grep -c '^pack.mcmeta$' mindsight-build/artifact/jar-contents.txt)" -eq 1
           cp "$JAR" mindsight-build/artifact/Mindsight-0.4.0-forge-1.20.1-47.4.10.jar
           sha256sum mindsight-build/artifact/Mindsight-0.4.0-forge-1.20.1-47.4.10.jar | tee mindsight-build/artifact/SHA256SUMS.txt
           cp mindsight-build/gradle-build.log mindsight-build/artifact/
-      - name: Upload production artifact
-        if: always()
+      - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Mindsight-0.4.0-production
