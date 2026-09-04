@@ -2,8 +2,7 @@ name: Mindsight 0.4.0 Professional Overhaul Build
 
 on:
   push:
-    branches:
-      - mindsight-overhaul-0.4.0-20260904
+    branches: [mindsight-overhaul-0.4.0-20260904]
 
 permissions:
   contents: read
@@ -21,28 +20,27 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.8'
-      - name: Verify source
-        shell: bash
+      - name: Verify exact source
         run: |
           set -euo pipefail
           mkdir -p project mindsight-build/artifact
           echo '708bbb781daa6aec6333c2e30e1e2c255869040ec49463e3413d8bac18ea632d  mindsight-build/Mindsight-0.4.0-SOURCE.zip' | sha256sum -c -
           unzip -t mindsight-build/Mindsight-0.4.0-SOURCE.zip
           unzip -q mindsight-build/Mindsight-0.4.0-SOURCE.zip -d project
-      - name: Build
-        shell: bash
+      - name: Forge production build
         run: |
           set -o pipefail
           cd project
           gradle clean build --stacktrace 2>&1 | tee ../mindsight-build/gradle-build.log
-      - name: Inspect JAR
-        shell: bash
+      - name: Verify production JAR
         run: |
           set -euo pipefail
           JAR="$(find project/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' -print | head -n1)"
           test -n "$JAR"
           unzip -t "$JAR"
           jar tf "$JAR" | tee mindsight-build/artifact/jar-contents.txt
+          grep -qx 'META-INF/mods.toml' mindsight-build/artifact/jar-contents.txt
+          grep -qx 'pack.mcmeta' mindsight-build/artifact/jar-contents.txt
           cp "$JAR" mindsight-build/artifact/Mindsight-0.4.0-forge-1.20.1-47.4.10.jar
           sha256sum mindsight-build/artifact/Mindsight-0.4.0-forge-1.20.1-47.4.10.jar | tee mindsight-build/artifact/SHA256SUMS.txt
           cp mindsight-build/gradle-build.log mindsight-build/artifact/
