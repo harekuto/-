@@ -1,0 +1,4 @@
+run_id=33848702782
+head_sha=018770beb6d0bd8e929ce43c9470a3840fcc9522
+artifact=Musor-Drop-5.0.1-Forge-1.20.1-Hardened-Professional
+63cee1d81dafbc9e0b090e0f74f5001fd8d56e4660d81453e07f142614093542  musor-drop/build/libs/Musor-Drop-5.0.1-Forge-1.20.1-Hardened-Professional.jar
