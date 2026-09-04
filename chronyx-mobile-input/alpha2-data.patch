@@ -1,0 +1,213 @@
+--- /dev/null	2026-09-04 04:05:29.787492162 +0000
++++ chronyx_mobile_personal/app/src/main/java/com/chronyx/browser/mobile/BrowserDataStore.java	2026-09-04 04:48:40.152676754 +0000
+@@ -0,0 +1,152 @@
++package com.chronyx.browser.mobile;
++
++import android.content.Context;
++import android.content.SharedPreferences;
++
++import org.json.JSONArray;
++import org.json.JSONObject;
++
++import java.util.ArrayList;
++import java.util.List;
++
++final class BrowserDataStore {
++    private static final String PREFS = "chronyx_mobile_browser_data";
++    private static final String KEY_BOOKMARKS = "bookmarks_v1";
++    private static final String KEY_HISTORY = "history_v1";
++    private static final String KEY_CLOSED = "closed_tabs_v1";
++    private static final int MAX_BOOKMARKS = 200;
++    private static final int MAX_HISTORY = 500;
++    private static final int MAX_CLOSED = 20;
++
++    private final SharedPreferences prefs;
++
++    BrowserDataStore(Context context) {
++        prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
++    }
++
++    List<Entry> bookmarks() { return read(KEY_BOOKMARKS, MAX_BOOKMARKS); }
++    List<Entry> history() { return read(KEY_HISTORY, MAX_HISTORY); }
++    List<Entry> closedTabs() { return read(KEY_CLOSED, MAX_CLOSED); }
++
++    boolean isBookmarked(String rawUrl) {
++        String safe = UrlResolver.sanitizePersistent(rawUrl);
++        if (safe == null) return false;
++        for (Entry entry : bookmarks()) if (safe.equals(entry.url)) return true;
++        return false;
++    }
++
++    void addBookmark(String title, String rawUrl) {
++        String safe = UrlResolver.sanitizePersistent(rawUrl);
++        if (safe == null) return;
++        List<Entry> entries = bookmarks();
++        removeUrl(entries, safe);
++        entries.add(0, new Entry(cleanTitle(title, safe), safe, System.currentTimeMillis()));
++        write(KEY_BOOKMARKS, entries, MAX_BOOKMARKS);
++    }
++
++    void removeBookmark(String rawUrl) {
++        String safe = UrlResolver.sanitizePersistent(rawUrl);
++        if (safe == null) return;
++        List<Entry> entries = bookmarks();
++        if (removeUrl(entries, safe)) write(KEY_BOOKMARKS, entries, MAX_BOOKMARKS);
++    }
++
++    void recordHistory(String title, String rawUrl) {
++        String safe = UrlResolver.sanitizePersistent(rawUrl);
++        if (safe == null) return;
++        List<Entry> entries = history();
++        if (!entries.isEmpty() && safe.equals(entries.get(0).url)) {
++            entries.set(0, new Entry(cleanTitle(title, safe), safe, System.currentTimeMillis()));
++        } else {
++            entries.add(0, new Entry(cleanTitle(title, safe), safe, System.currentTimeMillis()));
++        }
++        write(KEY_HISTORY, entries, MAX_HISTORY);
++    }
++
++    void recordClosedTab(String title, String rawUrl) {
++        String safe = UrlResolver.sanitizePersistent(rawUrl);
++        if (safe == null) return;
++        List<Entry> entries = closedTabs();
++        entries.add(0, new Entry(cleanTitle(title, safe), safe, System.currentTimeMillis()));
++        write(KEY_CLOSED, entries, MAX_CLOSED);
++    }
++
++    Entry popClosedTab() {
++        List<Entry> entries = closedTabs();
++        if (entries.isEmpty()) return null;
++        Entry entry = entries.remove(0);
++        write(KEY_CLOSED, entries, MAX_CLOSED);
++        return entry;
++    }
++
++    void clearHistory() { prefs.edit().remove(KEY_HISTORY).apply(); }
++    void clearClosedTabs() { prefs.edit().remove(KEY_CLOSED).apply(); }
++    void clearBookmarks() { prefs.edit().remove(KEY_BOOKMARKS).apply(); }
++
++    private List<Entry> read(String key, int max) {
++        List<Entry> result = new ArrayList<>();
++        String raw = prefs.getString(key, null);
++        if (raw == null) return result;
++        try {
++            JSONArray array = new JSONArray(raw);
++            for (int i = 0; i < array.length() && result.size() < max; i++) {
++                JSONObject item = array.optJSONObject(i);
++                if (item == null) continue;
++                String safe = UrlResolver.sanitizePersistent(item.optString("url", ""));
++                if (safe == null) continue;
++                result.add(new Entry(cleanTitle(item.optString("title", ""), safe), safe, item.optLong("time", 0L)));
++            }
++        } catch (Exception ignored) {
++            prefs.edit().remove(key).apply();
++        }
++        return result;
++    }
++
++    private void write(String key, List<Entry> entries, int max) {
++        try {
++            JSONArray array = new JSONArray();
++            for (int i = 0; i < entries.size() && i < max; i++) {
++                Entry entry = entries.get(i);
++                String safe = UrlResolver.sanitizePersistent(entry.url);
++                if (safe == null) continue;
++                JSONObject item = new JSONObject();
++                item.put("title", cleanTitle(entry.title, safe));
++                item.put("url", safe);
++                item.put("time", entry.time);
++                array.put(item);
++            }
++            prefs.edit().putString(key, array.toString()).apply();
++        } catch (Exception ignored) {
++            // Keep the previous last-known-good preference value on serialization failure.
++        }
++    }
++
++    private static boolean removeUrl(List<Entry> entries, String url) {
++        boolean removed = false;
++        for (int i = entries.size() - 1; i >= 0; i--) {
++            if (url.equals(entries.get(i).url)) {
++                entries.remove(i);
++                removed = true;
++            }
++        }
++        return removed;
++    }
++
++    private static String cleanTitle(String title, String fallback) {
++        String value = title == null ? "" : title.trim();
++        if (value.isEmpty()) value = fallback;
++        return value.length() > 160 ? value.substring(0, 160) : value;
++    }
++
++    static final class Entry {
++        final String title;
++        final String url;
++        final long time;
++
++        Entry(String title, String url, long time) {
++            this.title = title;
++            this.url = url;
++            this.time = time;
++        }
++    }
++}
+--- alpha1_actual/app/src/main/java/com/chronyx/browser/mobile/BrowserTab.java	2026-09-04 04:12:23.000000000 +0000
++++ chronyx_mobile_personal/app/src/main/java/com/chronyx/browser/mobile/BrowserTab.java	2026-09-04 04:48:54.955427870 +0000
+@@ -7,6 +7,8 @@
+     final WebView webView;
+     String title = "New tab";
+     String displayUrl = "";
++    String defaultUserAgent = "";
++    boolean desktopSite;
+ 
+     BrowserTab(long id, WebView webView) {
+         this.id = id;
+--- alpha1_actual/app/src/main/java/com/chronyx/browser/mobile/SessionStore.java	2026-09-04 04:12:23.000000000 +0000
++++ chronyx_mobile_personal/app/src/main/java/com/chronyx/browser/mobile/SessionStore.java	2026-09-04 04:48:40.153988694 +0000
+@@ -8,11 +8,13 @@
+ import java.util.List;
+ 
+ final class SessionStore {
+-    static final int MAX_TABS = 8;
++    static final int MAX_TABS = 12;
++    static final String DEFAULT_HOME = "https://duckduckgo.com/";
+     private static final String PREFS = "chronyx_mobile";
+     private static final String KEY_SESSION = "session_v1";
+     private static final String KEY_RESTORE = "restore_tabs";
+     private static final String KEY_THIRD_PARTY = "third_party_cookies";
++    private static final String KEY_HOME = "homepage_v1";
+ 
+     private final SharedPreferences prefs;
+ 
+@@ -25,6 +27,18 @@
+     boolean thirdPartyCookiesEnabled() { return prefs.getBoolean(KEY_THIRD_PARTY, false); }
+     void setThirdPartyCookiesEnabled(boolean value) { prefs.edit().putBoolean(KEY_THIRD_PARTY, value).apply(); }
+ 
++    String homepage() {
++        String safe = UrlResolver.sanitizePersistent(prefs.getString(KEY_HOME, DEFAULT_HOME));
++        return safe == null ? DEFAULT_HOME : safe;
++    }
++
++    boolean setHomepage(String raw) {
++        String safe = UrlResolver.sanitizePersistent(UrlResolver.resolve(raw));
++        if (safe == null) return false;
++        prefs.edit().putString(KEY_HOME, safe).apply();
++        return true;
++    }
++
+     void save(List<String> urls, int activeIndex) {
+         if (!restoreTabsEnabled()) {
+             clearSession();
+--- alpha1_actual/app/src/main/java/com/chronyx/browser/mobile/UrlResolver.java	2026-09-04 04:52:31.128260303 +0000
++++ chronyx_mobile_personal/app/src/main/java/com/chronyx/browser/mobile/UrlResolver.java	2026-09-04 04:50:12.564407584 +0000
+@@ -12,7 +12,7 @@
+ 
+     static String resolve(String raw) {
+         String input = raw == null ? "" : raw.trim();
+-        if (input.isEmpty()) return "https://chatgpt.com/";
++        if (input.isEmpty()) return SessionStore.DEFAULT_HOME;
+         if (input.length() > MAX_URL_LENGTH) return search(input.substring(0, MAX_URL_LENGTH));
+ 
+         Uri direct = Uri.parse(input);
