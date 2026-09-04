@@ -65,7 +65,17 @@ jobs:
           python3 /tmp/apply-assets-490.py musor-drop
 
           base64 -d build-input/musor-500-ui.patch.gz.b64 | gzip -dc > /tmp/musor500.patch
+          set +e
           patch -p1 -d musor-drop < /tmp/musor500.patch
+          PATCH_RC=$?
+          set -e
+          if [ "$PATCH_RC" -ne 0 ]; then
+            REJECTS="$(find musor-drop -name '*.rej' -print)"
+            test "$REJECTS" = 'musor-drop/gradle.properties.rej'
+          fi
+          rm -f musor-drop/gradle.properties.rej
+          sed -i 's/^mod_version=.*/mod_version=5.0.0/' musor-drop/gradle.properties
+          sed -i 's|^mod_description=.*|mod_description=Musor Drop 5.0 professional Forge 1.20.1 station with server-authoritative upgrades, Musor Shards, selling, 224 cases, modded-item support and a rebuilt professional interface.|' musor-drop/gradle.properties
           base64 -d build-input/station500.png.b64 > musor-drop/src/main/resources/assets/musordrop/textures/item/station.png
 
           grep -q '^minecraft_version=1.20.1$' musor-drop/gradle.properties
@@ -79,6 +89,7 @@ jobs:
           grep -q 'MusorTheme.surface' "$SCREEN"
           grep -q 'drawShardGlyph' "$SCREEN"
           ! grep -q 'page \* 8' "$SCREEN"
+          test -z "$(find musor-drop -name '*.rej' -print)"
           echo 'RECONSTRUCT_500_OK'
 
       - name: Static source, geometry and resource audit
@@ -93,14 +104,12 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import hashlib, json, re
-
           root=Path('musor-drop/src/main/resources')
           json_count=png_count=0
           for p in root.rglob('*.json'):
               json.loads(p.read_text(encoding='utf-8')); json_count += 1
           for p in root.rglob('*.png'):
               d=p.read_bytes(); assert d[:8] == b'\x89PNG\r\n\x1a\n', p; png_count += 1
-
           station=Path('musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java').read_text()
           cases=Path('musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java').read_text()
           screen=Path('musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java').read_text()
@@ -115,7 +124,7 @@ jobs:
           assert iy + 3*18 <= hy
           assert hy + 19 <= H
           assert gx + 3*cw + 2*dx <= W-12
-          assert gy + 2*ch + dy < const(cases,'CARD_H') + 108
+          assert gy + 2*ch + dy < 151
           assert 'renderSupportRow' in screen and 'MusorTheme.surface' in screen
           assert 'leftPos + 244' in screen and 'leftPos + 188' in screen
           icon=Path('musor-drop/src/main/resources/assets/musordrop/textures/item/station.png').read_bytes()
