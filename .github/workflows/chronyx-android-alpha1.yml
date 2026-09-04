@@ -1,8 +1,8 @@
-name: Chronyx Android Alpha3 Unsigned
+name: Chronyx Android Alpha4 ChatGPT
 
 on:
   push:
-    branches: [ chronyx-android-alpha3-signing ]
+    branches: [ chronyx-android-alpha4-chatgpt ]
     paths:
       - '.github/workflows/chronyx-android-alpha1.yml'
       - 'chronyx-mobile-input/**'
@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: chronyx-android-alpha3-signing
+          ref: chronyx-android-alpha4-chatgpt
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -28,7 +28,7 @@ jobs:
           gradle-version: '9.6.0'
       - uses: android-actions/setup-android@v3
 
-      - name: Restore verified source and apply alpha3 release patch
+      - name: Restore verified alpha3 source and apply alpha4 ChatGPT patch
         shell: bash
         run: |
           set -euo pipefail
@@ -43,20 +43,26 @@ jobs:
           patch -p1 < ../chronyx-mobile-input/alpha2-data.patch
           patch -p1 < ../chronyx-mobile-input/alpha2-main.patch
           patch -p1 < ../chronyx-mobile-input/alpha3-release.patch
-          echo '0fc342b8cca403f090010c4f123bf9730951820b362d591ce78ff45163b615d5  README.md' | sha256sum -c -
-          echo 'e8b677e80d8ff7bebaf4c481d6aa575cdd0b720eaffa86ba6950a14b8dd68f55  UPDATE_POLICY.md' | sha256sum -c -
-          echo '2588c2da679a7c27d0cbad7291b1add6d397fc78d4693729ea280adef0e3f7ce  app/build.gradle' | sha256sum -c -
+          patch -p1 < ../chronyx-mobile-input/alpha4-chatgpt-compat.patch
+          echo 'a71215801f96632a8ac491d97d2f31058645cd4bc6d84fffc89bb54aa7ae2cd0  README.md' | sha256sum -c -
+          echo 'f3bf5a7da8a2204d4ad9365310c0722804fbddfb10c513e4297c65ceb1efb2e9  UPDATE_POLICY.md' | sha256sum -c -
+          echo '9d948cbcd0fcf3fea074a6fb4ebbac5acc87461c67f137624b550c70e1673565  app/build.gradle' | sha256sum -c -
           echo '43889f93120e58252210d46f5b071d047946c96a06aa55d9925c9b89778b1f68  app/src/main/AndroidManifest.xml' | sha256sum -c -
-          echo 'f4a2963d1f947c75e9d46a0177e8dd669509b219b2364b469b56b053250993aa  app/src/main/java/com/chronyx/browser/mobile/MainActivity.java' | sha256sum -c -
-          grep -q "versionCode 3" app/build.gradle
-          grep -q "versionName '0.3.0-alpha.3'" app/build.gradle
+          echo '09fe2bf5ecf0eb14241ba9708e8dfb0811733a6652cc4796b453a95a1143da1b  app/src/main/java/com/chronyx/browser/mobile/MainActivity.java' | sha256sum -c -
+          echo 'e983a1500920bf03f5f151e93ccac627ccc679720629c1fee38731aeffea4e25  app/src/main/java/com/chronyx/browser/mobile/BrowserTab.java' | sha256sum -c -
+          echo '3e7c2fd05393490e37e008a26889dcfa2109b793e1b75da87fcd46a9f51e2057  app/src/main/java/com/chronyx/browser/mobile/SessionStore.java' | sha256sum -c -
+          grep -q "versionCode 4" app/build.gradle
+          grep -q "versionName '0.4.0-alpha.4'" app/build.gradle
+          grep -q "Maximize ChatGPT web compatibility" app/src/main/java/com/chronyx/browser/mobile/MainActivity.java
+          grep -q "setMediaPlaybackRequiresUserGesture(!enabled)" app/src/main/java/com/chronyx/browser/mobile/MainActivity.java
+          grep -q "setAcceptThirdPartyCookies(tab.webView, enabled || sessionStore.thirdPartyCookiesEnabled())" app/src/main/java/com/chronyx/browser/mobile/MainActivity.java
           ! grep -R "addJavascriptInterface" app/src/main
           ! grep -R "setAllowFileAccess(true)" app/src/main
           ! grep -R "MIXED_CONTENT_ALWAYS_ALLOW" app/src/main
           ! grep -R "handler.proceed()" app/src/main
-          zip -qr ../Chronyx-Mobile-0.3.0-alpha.3-source.zip . -x '*/build/*' '.gradle/*'
+          zip -qr ../Chronyx-Mobile-0.4.0-alpha.4-source.zip . -x '*/build/*' '.gradle/*'
           cd ..
-          sha256sum Chronyx-Mobile-0.3.0-alpha.3-source.zip > Chronyx-Mobile-0.3.0-alpha.3-source.zip.sha256
+          sha256sum Chronyx-Mobile-0.4.0-alpha.4-source.zip > Chronyx-Mobile-0.4.0-alpha.4-source.zip.sha256
 
       - name: Install Android SDK
         shell: bash
@@ -81,23 +87,23 @@ jobs:
           set -euo pipefail
           APK=chronyx-android/app/build/outputs/apk/release/app-release-unsigned.apk
           test -f "$APK"
-          cp "$APK" Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk
-          unzip -t Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk >/dev/null
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk | head -20
+          cp "$APK" Chronyx-Mobile-0.4.0-alpha.4-unsigned.apk
+          unzip -t Chronyx-Mobile-0.4.0-alpha.4-unsigned.apk >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 Chronyx-Mobile-0.4.0-alpha.4-unsigned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging Chronyx-Mobile-0.4.0-alpha.4-unsigned.apk | head -20
           cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" apksigner-36.0.0.jar
           test -s apksigner-36.0.0.jar
-          sha256sum Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk > Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk.sha256
+          sha256sum Chronyx-Mobile-0.4.0-alpha.4-unsigned.apk > Chronyx-Mobile-0.4.0-alpha.4-unsigned.apk.sha256
           sha256sum apksigner-36.0.0.jar > apksigner-36.0.0.jar.sha256
 
       - uses: actions/upload-artifact@v4
         with:
-          name: chronyx-mobile-0.3.0-alpha.3-unsigned
+          name: chronyx-mobile-0.4.0-alpha.4-unsigned
           path: |
-            Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk
-            Chronyx-Mobile-0.3.0-alpha.3-unsigned.apk.sha256
-            Chronyx-Mobile-0.3.0-alpha.3-source.zip
-            Chronyx-Mobile-0.3.0-alpha.3-source.zip.sha256
+            Chronyx-Mobile-0.4.0-alpha.4-unsigned.apk
+            Chronyx-Mobile-0.4.0-alpha.4-unsigned.apk.sha256
+            Chronyx-Mobile-0.4.0-alpha.4-source.zip
+            Chronyx-Mobile-0.4.0-alpha.4-source.zip.sha256
             apksigner-36.0.0.jar
             apksigner-36.0.0.jar.sha256
           if-no-files-found: error
