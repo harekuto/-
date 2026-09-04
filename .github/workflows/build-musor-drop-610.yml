@@ -1,0 +1,177 @@
+name: Build Musor Drop 6.1.0 Professional UI
+
+on:
+  push:
+    branches: [ musor-6.1.0-professional-ui ]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download verified 6.0.0 source baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/base600 musor-drop
+          mkdir -p /tmp/base600 musor-drop
+          gh run download 33855849462 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name 'Musor-Drop-6.0.0-Forge-1.20.1-Obsidian-Workbench-Release' \
+            --dir /tmp/base600
+          SOURCE="$(find /tmp/base600 -type f -name 'Musor-Drop-6.0.0-SOURCE.zip' | head -n1)"
+          test -n "$SOURCE"
+          unzip -tq "$SOURCE"
+          unzip -q "$SOURCE" -d musor-drop
+          test -f musor-drop/build.gradle
+          grep -q '^minecraft_version=1.20.1$' musor-drop/gradle.properties
+          grep -q '^forge_version=47.4.10$' musor-drop/gradle.properties
+          grep -q '^mod_id=musordrop$' musor-drop/gradle.properties
+          grep -q '^mod_version=6.0.0$' musor-drop/gradle.properties
+          echo BASELINE_600_OK
+
+      - name: Apply 6.1 professional GUI overlay
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat build-input/musor-610-overlay.part*.b64 | base64 -d > /tmp/musor610-overlay.zip
+          echo 'c275f8f5b9d84eeebb52f8f2011b42e0b66d3fd079e1332260c3869f60ffa965  /tmp/musor610-overlay.zip' | sha256sum -c -
+          unzip -tq /tmp/musor610-overlay.zip
+          unzip -qo /tmp/musor610-overlay.zip -d musor-drop
+          grep -q '^mod_version=6.1.0$' musor-drop/gradle.properties
+          grep -q 'GRID_X = 65' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'GRID_Y = 59' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'CARD_W = 139' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'PAGE_SIZE = 4' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'return new Rect(284, 38, 66, 18)' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'return new Rect(248, 151, 102, 18)' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/CaseLayout.java
+          grep -q 'drawPageGlyph' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java
+          grep -q 'drawConnector' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/UpgraderScreen.java
+          grep -q 'crystalCluster' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
+          grep -q 'progress(' musor-drop/src/main/java/net/execheinz/upgrader/client/screen/MusorTheme.java
+          echo PROFESSIONAL_UI_610_APPLY_OK
+
+      - name: Validate resources and client-server invariants
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('musor-drop/src/main/resources')
+          jc=pc=0
+          for p in root.rglob('*.json'):
+              json.loads(p.read_text(encoding='utf-8')); jc += 1
+          pack=root/'pack.mcmeta'
+          if pack.exists(): json.loads(pack.read_text(encoding='utf-8'))
+          for p in root.rglob('*.png'):
+              assert p.read_bytes()[:8] == b'\x89PNG\r\n\x1a\n', p
+              pc += 1
+          case_models=list((root/'assets/musordrop/models/item/case_models').glob('*.json'))
+          case_textures=list((root/'assets/musordrop/textures/item/cases').glob('*.png'))
+          assert len(case_models)==29, len(case_models)
+          assert len(case_textures)==29, len(case_textures)
+          print('RESOURCE_AUDIT_OK', jc, pc, len(case_models), len(case_textures))
+          PY
+          ! grep -R --line-number --fixed-string 'catch (Throwable' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'Runtime.exec' musor-drop/src/main/java
+          ! grep -R --line-number --fixed-string 'ProcessBuilder' musor-drop/src/main/java
+          grep -q 'NetworkDirection.PLAY_TO_SERVER' musor-drop/src/main/java/net/execheinz/upgrader/network/ModNetwork.java
+          grep -q 'NetworkDirection.PLAY_TO_CLIENT' musor-drop/src/main/java/net/execheinz/upgrader/network/ModNetwork.java
+          grep -q 'WARN_PENDING' musor-drop/src/main/java/net/execheinz/upgrader/economy/PendingRewardService.java
+          grep -q 'INVENTORY_X = 188' musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java
+          grep -q 'INVENTORY_Y = 177' musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java
+          grep -q 'HOTBAR_Y = 232' musor-drop/src/main/java/net/execheinz/upgrader/menu/StationLayout.java
+          echo STATIC_AUDIT_OK
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Forge production build and tests
+        working-directory: musor-drop
+        run: gradle --no-daemon clean test build --stacktrace
+
+      - name: Verify fresh 6.1 release
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          files=list(Path('musor-drop/build/test-results/test').glob('TEST-*.xml')); assert files
+          t=f=e=s=0
+          for p in files:
+              r=ET.parse(p).getroot()
+              t+=int(r.attrib.get('tests',0)); f+=int(r.attrib.get('failures',0)); e+=int(r.attrib.get('errors',0)); s+=int(r.attrib.get('skipped',0))
+          print('JUNIT_TOTAL',t,'FAILURES',f,'ERRORS',e,'SKIPPED',s)
+          assert t>=12000 and f==0 and e==0
+          Path('musor-drop/build/test-count.txt').write_text(f'JUnit tests: {t}\nFailures: {f}\nErrors: {e}\nSkipped: {s}\n')
+          PY
+
+          JAR="$(find musor-drop/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -n1)"
+          FINAL='musor-drop/build/libs/Musor-Drop-6.1.0-Forge-1.20.1-Professional-Obsidian-UI.jar'
+          test -n "$JAR"
+          cp "$JAR" "$FINAL"
+          unzip -tq "$FINAL"
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'modId="musordrop"'
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'displayName="Musor Drop"'
+          unzip -p "$FINAL" META-INF/mods.toml | grep -q 'version="6.1.0"'
+
+          python3 - <<'PY'
+          import json,struct,zipfile
+          from pathlib import Path
+          jar=Path('musor-drop/build/libs/Musor-Drop-6.1.0-Forge-1.20.1-Professional-Obsidian-UI.jar')
+          classes=case_models=case_textures=0
+          with zipfile.ZipFile(jar) as z:
+              names=set(z.namelist())
+              for n in names:
+                  d=z.read(n)
+                  if n.endswith('.class'):
+                      classes+=1
+                      assert d[:4]==b'\xca\xfe\xba\xbe' and struct.unpack('>H',d[6:8])[0]==61, n
+                  elif n.endswith('.json'):
+                      json.loads(d.decode('utf-8'))
+                  if '/models/item/case_models/' in n and n.endswith('.json'): case_models+=1
+                  if '/textures/item/cases/' in n and n.endswith('.png'): case_textures+=1
+              required={
+                  'assets/musordrop/models/item/station.json',
+                  'assets/musordrop/textures/item/station.png',
+                  'net/execheinz/upgrader/client/screen/UpgraderScreen.class',
+                  'net/execheinz/upgrader/client/screen/MusorTheme.class',
+                  'net/execheinz/upgrader/client/screen/MusorButton.class',
+                  'net/execheinz/upgrader/network/ModNetwork.class'
+              }
+              assert required <= names, required-names
+              assert classes>=43 and case_models==29 and case_textures==29, (classes,case_models,case_textures)
+              print('JAR_AUDIT_OK',classes,case_models,case_textures)
+          PY
+
+          sha256sum "$FINAL" | tee musor-drop/build/libs/SHA256SUMS.txt
+          (cd musor-drop && zip -qr build/Musor-Drop-6.1.0-SOURCE.zip src build.gradle gradle.properties settings.gradle)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Musor-Drop-6.1.0-Forge-1.20.1-Professional-Obsidian-UI-Release
+          path: |
+            musor-drop/build/libs/Musor-Drop-6.1.0-Forge-1.20.1-Professional-Obsidian-UI.jar
+            musor-drop/build/libs/SHA256SUMS.txt
+            musor-drop/build/test-count.txt
+            musor-drop/build/Musor-Drop-6.1.0-SOURCE.zip
+          if-no-files-found: error
