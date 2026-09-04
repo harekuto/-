@@ -44,7 +44,7 @@ jobs:
           echo '3cf52000aac3356362e5bea07834521184df1a09dd4c3ae1e32902c82b6c5060  /tmp/musor700-overlay.zip' | sha256sum -c -
           unzip -tq /tmp/musor700-overlay.zip
           unzip -qo /tmp/musor700-overlay.zip -d musor-drop
-          (cd musor-drop && python3 ../build-input/generate_case_materials_700.py)
+          python3 build-input/generate_case_materials_700.py
 
           grep -q '^mod_version=7.0.0$' musor-drop/gradle.properties
           grep -q 'Amethyst Vault UI' musor-drop/gradle.properties
