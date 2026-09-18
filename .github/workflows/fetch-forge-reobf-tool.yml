@@ -1,0 +1,37 @@
+name: Fetch Forge Reobf Tool
+
+on:
+  push:
+    branches: [ musordrop-8.3.0-port ]
+    paths:
+      - '.github/workflows/fetch-forge-reobf-tool.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Fetch ForgeAutoRenamingTool
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/art
+          curl --fail --location --retry 5 \
+            -o /tmp/art/ForgeAutoRenamingTool-1.0.8-all.jar \
+            'https://maven.minecraftforge.net/net/minecraftforge/ForgeAutoRenamingTool/1.0.8/ForgeAutoRenamingTool-1.0.8-all.jar'
+          test -s /tmp/art/ForgeAutoRenamingTool-1.0.8-all.jar
+          java -jar /tmp/art/ForgeAutoRenamingTool-1.0.8-all.jar --help > /tmp/art/help.txt 2>&1 || true
+          sha256sum /tmp/art/ForgeAutoRenamingTool-1.0.8-all.jar > /tmp/art/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ForgeAutoRenamingTool-1.0.8
+          path: /tmp/art
+          if-no-files-found: error
