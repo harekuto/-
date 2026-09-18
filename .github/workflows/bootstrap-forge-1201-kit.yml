@@ -1,0 +1,59 @@
+name: Bootstrap Forge 1.20.1 Compile Kit
+
+on:
+  push:
+    branches: [ musordrop-8.3.0-port ]
+    paths:
+      - '.github/workflows/bootstrap-forge-1201-kit.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+      - name: Recover known-good Forge project and export compile classpath
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/release /tmp/project /tmp/kit/classpath /tmp/kit/project
+          gh run download 33877934820 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name 'Musor-Drop-7.0.0-Amethyst-Vault-Release' \
+            --dir /tmp/release
+          SOURCE="$(find /tmp/release -type f -name 'Musor-Drop-7.0.0-SOURCE.zip' | head -n1)"
+          test -n "$SOURCE"
+          unzip -q "$SOURCE" -d /tmp/project
+          cat >> /tmp/project/build.gradle <<'GRADLE'
+          tasks.register('exportCompileClasspath', Copy) {
+              from configurations.compileClasspath
+              into layout.buildDirectory.dir('exported-compile-classpath')
+          }
+          GRADLE
+          cd /tmp/project
+          gradle --no-daemon clean compileJava exportCompileClasspath --stacktrace
+          cp -a build/exported-compile-classpath/. /tmp/kit/classpath/
+          cp build.gradle gradle.properties settings.gradle /tmp/kit/project/
+          printf '%s\n' "java=17" "minecraft=1.20.1" "forge=47.4.10" "gradle=8.8" > /tmp/kit/VERSIONS.txt
+          find /tmp/kit/classpath -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/kit/CLASSPATH-SHA256SUMS.txt
+          find /tmp/kit/classpath -maxdepth 1 -type f -printf '%f %s\n' | sort > /tmp/kit/classpath-files.txt
+          du -sh /tmp/kit /tmp/kit/classpath
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Forge-1.20.1-47.4.10-Compile-Kit
+          path: /tmp/kit
+          if-no-files-found: error
