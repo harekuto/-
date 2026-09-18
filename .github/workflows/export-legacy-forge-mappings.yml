@@ -1,0 +1,63 @@
+name: Export Legacy Forge Mappings
+
+on:
+  push:
+    branches: [ musordrop-8.3.0-port ]
+    paths:
+      - '.github/workflows/export-legacy-forge-mappings.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mappings:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mc: '1.19.2'
+            forge: '43.5.2'
+            java: '17'
+          - mc: '1.18.2'
+            forge: '40.3.12'
+            java: '17'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - name: Download official Forge MDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/mdk /tmp/out
+          curl --fail --location --retry 5 -o /tmp/mdk.zip \
+            "https://maven.minecraftforge.net/net/minecraftforge/forge/${{ matrix.mc }}-${{ matrix.forge }}/forge-${{ matrix.mc }}-${{ matrix.forge }}-mdk.zip"
+          unzip -q /tmp/mdk.zip -d /tmp/mdk
+          chmod +x /tmp/mdk/gradlew
+      - name: Resolve official mappings
+        working-directory: /tmp/mdk
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ./gradlew --no-daemon compileJava --stacktrace
+          find "$HOME/.gradle" -type f \( -name 'mapping-*-mapping.zip' -o -name '*mapping*.zip' \) -print | sort > /tmp/candidates.txt
+          cat /tmp/candidates.txt
+          MAP="$(grep "/mapping-${{ matrix.mc }}-mapping.zip$" /tmp/candidates.txt | head -n1 || true)"
+          if [ -z "$MAP" ]; then
+            MAP="$(grep "${{ matrix.mc }}" /tmp/candidates.txt | head -n1 || true)"
+          fi
+          test -n "$MAP"
+          cp "$MAP" "/tmp/out/mapping-${{ matrix.mc }}-mapping.zip"
+          unzip -l "/tmp/out/mapping-${{ matrix.mc }}-mapping.zip"
+          unzip -p "/tmp/out/mapping-${{ matrix.mc }}-mapping.zip" methods.csv | head
+          sha256sum /tmp/out/* > /tmp/out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Forge-${{ matrix.mc }}-Official-Mappings
+          path: /tmp/out
+          if-no-files-found: error
