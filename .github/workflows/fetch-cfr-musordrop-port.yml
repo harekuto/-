@@ -1,0 +1,33 @@
+name: Fetch CFR for Musor Drop Port
+
+on:
+  push:
+    branches: [ musordrop-8.3.0-port ]
+    paths:
+      - '.github/workflows/fetch-cfr-musordrop-port.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch CFR 0.152
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/cfr
+          curl --fail --location --retry 4 \
+            -o /tmp/cfr/cfr-0.152.jar \
+            'https://repo1.maven.org/maven2/org/benf/cfr/0.152/cfr-0.152.jar'
+          test -s /tmp/cfr/cfr-0.152.jar
+          java -jar /tmp/cfr/cfr-0.152.jar --version | tee /tmp/cfr/version.txt
+          sha256sum /tmp/cfr/cfr-0.152.jar > /tmp/cfr/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CFR-0.152
+          path: /tmp/cfr
+          if-no-files-found: error
