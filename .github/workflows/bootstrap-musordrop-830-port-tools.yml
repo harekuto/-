@@ -1,0 +1,73 @@
+name: Bootstrap Musor Drop 8.3 Port Tools
+
+on:
+  push:
+    branches: [ musordrop-8.3.0-port ]
+    paths:
+      - '.github/workflows/bootstrap-musordrop-830-port-tools.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Recover known-good Forge 1.20.1 source workspace
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/release /tmp/project /tmp/port-tools
+          gh run download 33877934820 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name 'Musor-Drop-7.0.0-Amethyst-Vault-Release' \
+            --dir /tmp/release
+          SOURCE="$(find /tmp/release -type f -name 'Musor-Drop-7.0.0-SOURCE.zip' | head -n1)"
+          test -n "$SOURCE"
+          unzip -q "$SOURCE" -d /tmp/project
+          grep -q '^minecraft_version=1.20.1$' /tmp/project/gradle.properties
+          grep -q '^forge_version=47.4.10$' /tmp/project/gradle.properties
+          grep -q '^mapping_channel=official$' /tmp/project/gradle.properties
+          grep -q '^mapping_version=1.20.1$' /tmp/project/gradle.properties
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Resolve ForgeGradle mappings and toolchain
+        working-directory: /tmp/project
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle --no-daemon compileJava --stacktrace
+          MAP="$(find "$HOME/.gradle" -type f -name 'mapping-1.20.1-mapping.zip' | head -n1)"
+          if [ -z "$MAP" ]; then
+            MAP="$(find "$HOME/.gradle" -type f \( -name '*1.20.1*mapping*.zip' -o -name '*map2srg*.tsrg*' \) | head -n1)"
+          fi
+          test -n "$MAP"
+          cp "$MAP" /tmp/port-tools/
+          curl --fail --location --retry 4 \
+            -o /tmp/port-tools/installertools-1.4.4-fatjar.jar \
+            'https://maven.minecraftforge.net/net/minecraftforge/installertools/1.4.4/installertools-1.4.4-fatjar.jar'
+          test -s /tmp/port-tools/installertools-1.4.4-fatjar.jar
+          java -jar /tmp/port-tools/installertools-1.4.4-fatjar.jar --help > /tmp/port-tools/installertools-help.txt 2>&1 || true
+          sha256sum /tmp/port-tools/* > /tmp/port-tools/SHA256SUMS.txt
+          ls -lah /tmp/port-tools
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Musor-Drop-8.3.0-Port-Tools
+          path: /tmp/port-tools
+          if-no-files-found: error
